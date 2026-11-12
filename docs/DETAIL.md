@@ -38,13 +38,18 @@ model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(conf
 
 DSH 0.2.2-rc.2 要求每个工具声明 `output: { schema, render }`。status 工具现已补齐对象 schema 和 JSON 文本渲染；`apply()` 先注册主工具 `computer_use_codex`，再注册 status。status 注册失败只记一条错误并继续；可选 `ctx.effect` 同步失败时回退并复用已注册工具，清理异常也不会阻断另一个工具的清理。主工具自身注册失败仍会抛出，避免掩盖加载错误。
 
-`computer_use_codex_status` 无参数，以 `{}` 调用；经 `resolveCodexBin` 解析入口后调用 `inspectEnvironment`，直接返回环境 JSON，不包含任务结果的 `ok`/`output` 包装。它不运行桌面任务或创建截图目录，先读取以下三条来源，再补入在线版本比对结果：
+`computer_use_codex_status` 无参数，以 `{}` 调用；经 `resolveCodexBin` 解析入口后调用 `inspectEnvironment`，直接返回环境 JSON，不包含任务结果的 `ok`/`output` 包装。它不运行桌面任务或创建截图目录，先取得平台信息并读取以下三条 CLI/认证来源，再补入在线版本比对结果：
 
 | 来源 | 返回字段与处理 |
 | --- | --- |
+| `process.platform` | `platform`：原值，如 `darwin` / `win32` / `linux`。 |
+| `platformLabel(process.platform)` | `platformLabel`：复用已有映射，返回 `macOS` / `Windows` / `Linux`。 |
+| `os.version()` | `osVersion`：原样返回系统版本字符串；无法取得或为空时为 `unknown`，不抛出异常，不增加 warning。 |
 | `codex debug models` | `models` 对象数组；每项含 `slug`、`displayName`、`efforts`、`serviceTiers`，分别表示模型 ID、显示名、推理档位、服务层 ID。默认空数组。 |
 | `codex doctor --json` | `codexVersion`、`desktopAppVersion`、`authMode`，分别表示 CLI 版本、桌面应用版本、已保存认证方式；无法取得时为 `unknown`。 |
 | `$CODEX_HOME/auth.json`，默认 `~/.codex/auth.json` | 本地解码 `tokens.id_token` 的 JWT payload，从 `https://api.openai.com/auth` 下读取 `chatgpt_plan_type` → `planType`、`chatgpt_subscription_active_until` → `subscriptionActiveUntil`；缺失时为 `null`。 |
+
+新增的 `platform`、`platformLabel`、`osVersion` 与现有字段同级，仅用 Node 内置 `process`/`os`，不读用户文件，不单独启动进程；`warnings` 不受影响。
 
 `codex debug models` 默认在线刷新，失败时回退 `codex debug models --bundled` 并追加 warning；两次均失败时保留 `models: []` 并告警。关闭在线检查时直接使用 `--bundled`，成功时也会提示使用离线目录。`warnings` 为非阻断告警数组，无告警时为 `[]`。三条来源依次读取，各自失败保留其他来源结果；CLI 入口解析失败发生在体检前，会直接报错。每次 CLI 子命令调用（含回退）限时 15 秒。三条来源的结果（包括 warning）在当前进程内按 `codexBin` 路径与在线检查开关缓存 5 分钟，并共享进行中的请求；每次返回结果副本。该缓存与执行任务时的 `--version` 进程级缓存相互独立。
 

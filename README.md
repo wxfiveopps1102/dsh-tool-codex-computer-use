@@ -95,6 +95,8 @@ model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(conf
 
 ## Environment inspection
 
+The status response includes the platform and OS version to help with troubleshooting.
+
 Call `computer_use_codex_status` with `{}` (no parameters). It returns environment JSON directly, without the task result's `ok`/`output` wrapper:
 
 | Field | Meaning |

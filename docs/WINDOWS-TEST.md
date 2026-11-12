@@ -207,6 +207,7 @@ $LASTEXITCODE
 - 若任务返回 `logPath`，保留 JSON 中该路径；对应日志文件的内容可以只附最后 20 行。
 - 桌面测试生成的截图文件，以及工具报告的截图路径。
 - `codex --version` 输出与 `computer_use_codex_status` 全文（包括 `warnings`）。
+- `computer_use_codex_status` 里应看到 `platform: "win32"`、`platformLabel: "Windows"`。
 
 读取日志末尾 20 行的 PowerShell 示例：
 

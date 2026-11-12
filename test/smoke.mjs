@@ -337,6 +337,12 @@ if (args[0] === 'doctor' && args[1] === '--json') {
   const statusBin = await statusEntry('success');
   apply(ctx, { codexBin: statusBin });
   const offlineStatus = await statusTool.execute();
+  check(offlineStatus.platform === process.platform, 'status platform matches process.platform');
+  check(offlineStatus.platformLabel === platformLabel(process.platform), 'status platform label matches platformLabel');
+  check(typeof offlineStatus.osVersion === 'string' && offlineStatus.osVersion.trim().length > 0, 'status OS version is a non-empty string');
+  console.log('OK: status platform metadata ' + JSON.stringify({
+    platform: offlineStatus.platform, platformLabel: offlineStatus.platformLabel, osVersion: offlineStatus.osVersion,
+  }));
   check(offlineStatus.latestCodexVersion === null && offlineStatus.upToDate === null && fetchCalls === 0, 'offline status never fetches');
   check(await readFile(statusBin + '.calls', 'utf8') === 'debug models --bundled\n', 'offline models skip online refresh');
   check(offlineStatus.warnings.some(warning => warning.includes('离线目录')), 'offline model warning');

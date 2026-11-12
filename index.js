@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { access, mkdir, mkdtemp, open, readFile, rm, stat } from 'node:fs/promises';
-import { homedir, tmpdir } from 'node:os';
+import { homedir, tmpdir, version } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { constants } from 'node:fs';
 
@@ -158,9 +158,16 @@ async function inspectEnvironment(codexBin, config) {
   }
   const result = (async () => {
     const environment = {
+      platform: PLATFORM, platformLabel: platformLabel(PLATFORM), osVersion: 'unknown',
       models: [], codexVersion: 'unknown', desktopAppVersion: 'unknown',
       authMode: 'unknown', planType: null, subscriptionActiveUntil: null, warnings: [],
     };
+    try {
+      const osVersion = version();
+      if (typeof osVersion === 'string' && osVersion.trim()) environment.osVersion = osVersion;
+    } catch {
+      // OS metadata is optional and does not affect inspection warnings.
+    }
     const readJson = args => new Promise((resolveJson, rejectJson) => {
       const js = codexBin.endsWith('.js');
       const child = execFile(js ? resolveNodeExec() : codexBin, js ? [codexBin, ...args] : args, {

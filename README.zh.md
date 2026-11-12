@@ -97,6 +97,8 @@ model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(conf
 
 ## 环境体检
 
+体检返回平台与系统版本，便于排查。
+
 以 `{}` 调用 `computer_use_codex_status`（无参数），直接返回环境 JSON，不套用任务结果的 `ok`/`output` 包装：
 
 | 字段 | 含义 |
