@@ -4,6 +4,10 @@ A DSH Host tool for one-shot desktop or text tasks via a local Codex CLI, not a 
 
 ![Amazon 収納用品 ranking](docs/assets/amazon-ranking.jpg)
 
+## Related plugin
+
+This plugin runs through Codex CLI, with verification possible at every step, slower execution, and cross-platform support including Windows; the [native dsh-tool-desktop-use plugin](https://github.com/wxfiveopps1102/dsh-tool-desktop-use) calls macOS APIs directly for millisecond-scale batched actions, supports macOS only, and suits frequent operations.
+
 ## Purpose and trade-offs
 
 This tool delegates one-shot tasks from DSH to the local Codex CLI. It supports `mode=desktop` for desktop operations and `mode=text` for text-only delegation. It is not a replacement for Codex and does not support multi-turn conversations.
@@ -67,6 +71,25 @@ Binary settings must be file paths, not shell commands. Invalid explicit entries
 
 `bypass` passes `--dangerously-bypass-approvals-and-sandbox`, disabling approvals and the CLI sandbox, allowing direct desktop/file operations. This remains the compatibility default for GUI use. `workspace-write` instead passes `--sandbox workspace-write`; GUI operations may fail. Results include `securityMode` and `securityNotice`. Neither mode undoes desktop effects or guarantees external GUI plugins are contained by a filesystem sandbox.
 
+### Model × reasoning effort matrix (live catalog, 2026-11-12)
+
+This is the user-supplied snapshot of the live catalog on 2026-11-12; it was not fetched again for this documentation update.
+
+| Model | Supported efforts |
+| --- | --- |
+| `gpt-6.1-sol` | `low` / `medium` / `high` / `xhigh` / `max` / **`ultra`** |
+| `gpt-6-astra` | `low` / `medium` / `high` / `xhigh` / `max` / **`ultra`** |
+| `gpt-6.1-terra` | `low` / `medium` / `high` / `xhigh` / `max` / **`ultra`** |
+| `gpt-6-sol` | `low` / `medium` / `high` / `xhigh` / `max` / **`ultra`** |
+| `gpt-5.6-sol` | `low` / `medium` / `high` / `xhigh` / `max` / **`ultra`** |
+| `gpt-5.6-terra` | `low` / `medium` / `high` / `xhigh` / `max` / **`ultra`** |
+| `gpt-reserve` | `low` / `medium` / `high` / `xhigh` / **`max`** |
+| `gpt-6-luna` | `low` / `medium` / `high` / `xhigh` / **`max`** |
+| `gpt-5.6-luna` | `low` / `medium` / `high` / `xhigh` / **`max`** |
+| `codex-auto-review` | `low` / `medium` / `high` / `xhigh` / **`max`** |
+
+`ultra` = `max` reasoning + automatic task delegation, creating additional subtasks and token costs. Codex validates reasoning efforts; invalid values return HTTP 400. Actual availability varies with the subscription plan and CLI version; use `models[].efforts` returned by `computer_use_codex_status` as the source of truth.
+
 ## Choosing a model, reasoning effort and service tier
 
 `computer_use_codex` accepts optional call arguments `model`, `reasoningEffort` and `serviceTier`. Set `config.model`, `config.reasoningEffort` and `config.serviceTier` for plugin defaults, or use the environment variables listed above. Each field is resolved independently through three override levels: **call argument > config > environment variable**. If all three are absent, it inherits the local Codex configuration (`~/.codex/config.toml`). Omitting a call argument alone does not bypass config or environment defaults.
@@ -83,7 +106,7 @@ Example plugin entry in `cordis.patch.yml`:
         serviceTier: priority
 ```
 
-Available models vary with the subscription plan and CLI version. Call `computer_use_codex_status` to inspect the current catalog and use `planType` alongside it when judging model availability. The supplied local snapshot includes `gpt-6.1-sol` and `gpt-6-astra` among 10 models; `gpt-6.1-sol` supports `low` / `medium` / `high` / `xhigh` / `max` / `ultra`. The Fast service tier ID is `priority`; check each model's returned `serviceTiers` before selecting it.
+See the matrix above for models and reasoning efforts. Call `computer_use_codex_status` to inspect the current catalog and use `planType` alongside it when judging model availability. The Fast service tier ID is `priority`; check each model's returned `serviceTiers` before selecting it.
 
 The returned `controls` string lists effective overrides and their sources, separated by spaces. With the config example above and no call overrides, it reads:
 

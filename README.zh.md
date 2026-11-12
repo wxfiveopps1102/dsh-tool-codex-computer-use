@@ -4,6 +4,10 @@
 
 ![亚马逊收纳用品排行榜](docs/assets/amazon-ranking.jpg)
 
+## 相关插件
+
+本插件通过 Codex CLI 执行，每步可验证、速度较慢，跨平台（含 Windows）；[原生插件 dsh-tool-desktop-use](https://github.com/wxfiveopps1102/dsh-tool-desktop-use) 直接调用 macOS API，批量动作毫秒级，仅支持 macOS，适合高频操作。
+
 ## 定位与取舍
 
 这个工具在 DSH 内把一次性任务交给本机 Codex CLI，支持 `mode=desktop`（桌面操作）与 `mode=text`（纯文本委派）。它不是 Codex 的替代品，也不做多轮对话。
@@ -69,6 +73,25 @@
 
 保留环境变量，不导出 schemastery `Config`：workspace 链接导入已失败，profile 安装解析未确认，本次不新增运行时依赖；不承诺自动配置界面。
 
+### 模型 × 推理档位矩阵（实时目录，2026-11-12）
+
+以下为用户提供的 2026-11-12 实时目录快照，本次文档更新未重新拉取。
+
+| 模型 | 支持的档位 |
+| --- | --- |
+| `gpt-6.1-sol` | `low` / `medium` / `high` / `xhigh` / `max` / **`ultra`** |
+| `gpt-6-astra` | `low` / `medium` / `high` / `xhigh` / `max` / **`ultra`** |
+| `gpt-6.1-terra` | `low` / `medium` / `high` / `xhigh` / `max` / **`ultra`** |
+| `gpt-6-sol` | `low` / `medium` / `high` / `xhigh` / `max` / **`ultra`** |
+| `gpt-5.6-sol` | `low` / `medium` / `high` / `xhigh` / `max` / **`ultra`** |
+| `gpt-5.6-terra` | `low` / `medium` / `high` / `xhigh` / `max` / **`ultra`** |
+| `gpt-reserve` | `low` / `medium` / `high` / `xhigh` / **`max`** |
+| `gpt-6-luna` | `low` / `medium` / `high` / `xhigh` / **`max`** |
+| `gpt-5.6-luna` | `low` / `medium` / `high` / `xhigh` / **`max`** |
+| `codex-auto-review` | `low` / `medium` / `high` / `xhigh` / **`max`** |
+
+`ultra` = `max` 推理 + 自动任务委派，会产生额外子任务与 token 成本。推理档位由 Codex 侧校验，非法值会返回 HTTP 400。实际可用性随套餐与 CLI 版本变化，以 `computer_use_codex_status` 返回的 `models[].efforts` 为准。
+
 ## 选择模型 / 推理档位 / 服务层
 
 `computer_use_codex` 支持调用参数 `model`、`reasoningEffort`、`serviceTier`；也可通过 `config.model`、`config.reasoningEffort`、`config.serviceTier` 设置插件默认值，或使用上表的环境变量。每个字段独立按三级覆盖优先级解析：**调用参数 > config > 环境变量**；三级均未设置时，继承 Codex 本地配置（`~/.codex/config.toml`）。仅省略调用参数，仍会使用 config 或环境变量中的默认值。
@@ -85,7 +108,7 @@
         serviceTier: priority
 ```
 
-可用模型随套餐与 CLI 版本变化。调用 `computer_use_codex_status` 获取当前目录，结合 `planType` 判断套餐下的可用模型。任务提供的本机快照共 10 个模型，包含 `gpt-6.1-sol`、`gpt-6-astra`；其中 `gpt-6.1-sol` 支持 `low` / `medium` / `high` / `xhigh` / `max` / `ultra`。Fast 服务层 ID 为 `priority`，选择前应查看对应模型返回的 `serviceTiers`。
+模型与推理档位参见上面的矩阵。调用 `computer_use_codex_status` 获取当前目录，结合 `planType` 判断套餐下的可用模型。Fast 服务层 ID 为 `priority`，选择前应查看对应模型返回的 `serviceTiers`。
 
 返回的 `controls` 是以空格分隔的字符串，回显生效的覆盖值及其来源。使用上面的配置且无调用参数覆盖时为：
 
