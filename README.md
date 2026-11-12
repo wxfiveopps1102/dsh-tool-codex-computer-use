@@ -52,6 +52,7 @@ Explicit `apply(ctx, config)` settings override environment variables. Environme
 | `codexBin` | `DSH_CODEX_BIN` | executable `codex` on PATH, then `$DSH_PROFILE_DIR/node_modules/@openai/codex/bin/codex.js` |
 | `securityMode` | `DSH_CODEX_SECURITY_MODE` | `bypass` |
 | `timeoutSeconds` | `DSH_CODEX_TIMEOUT_SECONDS` | `600` (integer, 30–3600) |
+| `terminateGraceMs` | `DSH_CODEX_TERMINATE_GRACE_MS` | `5000` milliseconds (integer, 0–30000; `0` skips graceful termination) |
 | `screenshotDir` | `DSH_CODEX_SCREENSHOT_DIR` | `<cwd>/.codex-cu/` |
 | `model` | `DSH_CODEX_MODEL` | inherit the local Codex configuration |
 | `reasoningEffort` | `DSH_CODEX_REASONING_EFFORT` | inherit the local Codex configuration |
@@ -129,7 +130,17 @@ Previously verified real run, supplied as evidence and not repeated here: `{"ok"
 
 See the [detailed safety and limitations guide (Chinese)](docs/DETAIL.md) for more information.
 
-On task timeout, Windows spawns `taskkill /pid PID /T /F` to terminate the process tree, falling back to `child.kill()` if that fails. Other platforms send SIGKILL to the process group via the negative child PID, falling back to `child.kill('SIGKILL')`. Descendants outside the targeted tree or group may remain, and prior GUI effects cannot be undone. Host cancellation through `execute`'s `exec` argument is not implemented because the signal contract is unverified; bounded timeout remains in place.
+On task timeout, the plugin requests graceful termination, waits up to `terminateGraceMs`, then escalates to forced termination if the process has not exited. This gives Codex time to clean up computer-use sessions and reduces leftover sessions. `terminateGraceMs` is a plugin setting, not a call argument: config overrides `DSH_CODEX_TERMINATE_GRACE_MS`, with a default of `5000` milliseconds and an integer range of 0–30000. Set it to `0` to send KILL immediately without the graceful step.
+
+Windows first spawns `taskkill /pid PID /T`, then adds `/F` for forced termination. POSIX platforms send SIGTERM to the process group via the negative child PID, then SIGKILL. Failed tree/group termination falls back to `child.kill(signal)` using the signal for that step. Descendants outside the targeted tree or group may remain, and prior GUI effects cannot be undone. Host cancellation through `execute`'s `exec` argument is not implemented because the signal contract is unverified; bounded timeout remains in place.
+
+On macOS, a lingering virtual mouse or screen-sharing indicator is a ChatGPT/Codex desktop app state issue and can remain after the task process exits. For manual cleanup, run:
+
+```sh
+pkill -f SkyComputerUseClient; killall SkyComputerUseService 2>/dev/null
+```
+
+**Use with care: this affects any ongoing Codex computer-use sessions.** The plugin does not run this command automatically.
 
 ## Validation and publication
 
@@ -139,6 +150,6 @@ From this package directory:
 ELECTRON_RUN_AS_NODE=1 "/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" test/smoke.mjs
 ```
 
-Tests use fake CLIs only, including a real 30-second task timeout; no desktop operation. Real conservative-mode GUI behavior, profile installation and publication remain unverified.
+Tests use fake CLIs only, including three real 30-second task timeout cases: exit after TERM (about 30 seconds), ignore TERM and escalate to KILL after a 1000 ms grace period (about 31 seconds), and send KILL immediately with a zero grace period (about 30 seconds); no desktop operation. Real conservative-mode GUI behavior, profile installation and publication remain unverified.
 
 The author and MIT copyright holder are `wx5`. Repository metadata uses `https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use`, with `wxfiveopps1102` as the GitHub owner; the repository has not yet been created. Confirm npm name availability and ownership; tag the actual repository `dsh-plugin` for directory submission. The independent unscoped package keeps Host tool semantics separate from subagent providers; maintainers own security review and ongoing maintenance. MIT licensed.

@@ -64,6 +64,7 @@ model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(conf
 | `onlineCheck` | `DSH_CODEX_OFFLINE` | 默认开启；config 为 `false` 或环境变量为 `1` 时关闭 |
 | `securityMode` | `DSH_CODEX_SECURITY_MODE` | `bypass` |
 | `timeoutSeconds` | `DSH_CODEX_TIMEOUT_SECONDS` | `600`，整数 30–3600 |
+| `terminateGraceMs` | `DSH_CODEX_TERMINATE_GRACE_MS` | `5000` 毫秒，整数 0–30000；`0` 跳过优雅终止 |
 | `screenshotDir` | `DSH_CODEX_SCREENSHOT_DIR` | `<cwd>/.codex-cu/` |
 | `model` | `DSH_CODEX_MODEL` | 继承 Codex 本地配置 |
 | `reasoningEffort` | `DSH_CODEX_REASONING_EFFORT` | 继承 Codex 本地配置 |
@@ -85,7 +86,19 @@ model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(conf
 
 已核实的历史实测（任务提供，本轮未重跑）：`{"ok":true,"exitCode":0,"durationMs":47537,...}`。截图 `<workspace>/.codex-cu/calculator-7x8-56.png` 证明计算器 `7×8=56`；历史 `.png` 实为 JPEG，本次未改名，后续提示要求 `.jpg`。证据不随 npm 包分发。
 
-任务超时时，Windows 通过 spawn 执行 `taskkill /pid PID /T /F` 终止进程树，失败则回退 `child.kill()`；其他平台以子进程的负 PID 向进程组发送 SIGKILL，失败则回退 `child.kill('SIGKILL')`。目标树或组之外的后代可能继续运行，已发生的桌面修改无法撤销。暂不接入 `execute` 的 `exec` 取消信号：Host 契约未确认，先保留已验证的有界超时，取消集成为后续项。
+## 已知限制
+
+任务超时后，采用 TERM → 宽限期 → KILL：先请求优雅终止，等待最多 `terminateGraceMs`，仍未退出时再升级为强制终止，为 Codex 清理 computer-use 会话留出时间，减少会话残留。`terminateGraceMs` 仅为插件配置，不是调用参数；config 优先于环境变量 `DSH_CODEX_TERMINATE_GRACE_MS`，默认 `5000` 毫秒，须为 0–30000 的整数。设为 `0` 时跳过 TERM 和宽限期，直接 KILL。
+
+Windows 先通过 spawn 执行 `taskkill /pid PID /T`，强制终止时执行 `taskkill /pid PID /T /F`；POSIX 平台以子进程的负 PID 向进程组先发送 SIGTERM，再发送 SIGKILL。进程树／进程组终止失败时，回退 `child.kill(signal)`，使用该阶段对应的信号。目标树或组之外的后代可能继续运行，已发生的桌面修改无法撤销。暂不接入 `execute` 的 `exec` 取消信号：Host 契约未确认，先保留已验证的有界超时，取消集成为后续项。
+
+macOS 上仍残留的虚拟鼠标或共享指示器属于 ChatGPT/Codex 桌面端状态问题，任务进程退出后也可能继续显示。可手动运行以下命令清理：
+
+```sh
+pkill -f SkyComputerUseClient; killall SkyComputerUseService 2>/dev/null
+```
+
+**此命令会影响正在进行的 Codex computer-use 会话，请谨慎使用。** 插件不会自动执行该命令。
 
 ## 自测与发布
 
@@ -95,7 +108,7 @@ model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(conf
 ELECTRON_RUN_AS_NODE=1 "/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" test/smoke.mjs
 ```
 
-仅运行假 CLI，包括真实 30 秒任务超时，不操作桌面。未验证真实保守模式 GUI、profile 安装、npm 发布。
+仅运行假 CLI，包含三类真实 30 秒任务超时：收到 TERM 后自行退出（约 30 秒）、忽略 TERM 后等待 1000 毫秒宽限期再升级 KILL（约 31 秒）、0 宽限期直接 KILL（约 30 秒）；不操作桌面。未验证真实保守模式 GUI、profile 安装、npm 发布。
 
 同意独立 unscoped npm 包与仓库 `dsh-plugin` topic：Host 工具与文本委派 provider 职责不同，不向现有 provider 强塞桌面能力；维护、安全审查由发布者承担。
 

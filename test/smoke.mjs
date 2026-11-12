@@ -21,7 +21,7 @@ globalThis.fetch = async (url, options) => {
   if (fetchFailure) throw new Error('fake network timeout');
   return { ok: true, json: async () => ({ version: fetchVersion }) };
 };
-for (const key of ['DSH_CODEX_BIN', 'DSH_PROFILE_DIR', 'DSH_CODEX_SECURITY_MODE', 'DSH_CODEX_TIMEOUT_SECONDS', 'DSH_CODEX_SCREENSHOT_DIR', 'DSH_CODEX_MODEL', 'DSH_CODEX_REASONING_EFFORT', 'DSH_CODEX_SERVICE_TIER']) delete process.env[key];
+for (const key of ['DSH_CODEX_BIN', 'DSH_PROFILE_DIR', 'DSH_CODEX_SECURITY_MODE', 'DSH_CODEX_TIMEOUT_SECONDS', 'DSH_CODEX_TERMINATE_GRACE_MS', 'DSH_CODEX_SCREENSHOT_DIR', 'DSH_CODEX_MODEL', 'DSH_CODEX_REASONING_EFFORT', 'DSH_CODEX_SERVICE_TIER']) delete process.env[key];
 try {
   // The plugin imports no Host package: it builds the registry definition itself,
   // so it loads straight from the workspace, before and after installation.
@@ -82,8 +82,8 @@ try {
     await chmod(fake, 0o700);
     apply(ctx, { codexBin: fake });
   };
-  const execute = async (args = {}) => {
-    const result = await captured.execute({ task: 'say ok', cwd: fixture, ...args }, {});
+  const execute = async (args = {}, tool = captured) => {
+    const result = await tool.execute({ task: 'say ok', cwd: fixture, ...args }, {});
     if (result.logPath) logs.push(dirname(result.logPath));
     check(Number.isInteger(result.durationMs) && result.durationMs >= 0, 'duration');
     check(result.output.length <= 8000, 'length');
@@ -435,12 +435,91 @@ await writeFile(target, 'FAKE JS OK', { flag: 'wx' });
   delete process.env.DSH_CODEX_SECURITY_MODE;
   console.log('OK: config > env > PATH > profile, missing configuration, bypass/workspace-write, screenshot override');
   console.log('OK: nonzero exit, fallback, truncation, missing entry, spawn failure, JS entry');
-  // Eight sleep-5 intervals keep the shell alive beyond the legal minimum.
-  await script('i=0\nwhile [ "$i" -lt 8 ]; do sleep 5; i=$((i + 1)); done\n');
-  const timeout = await execute({ timeoutSeconds: 30 });
-  check(!timeout.ok && /timed out|超时/i.test(timeout.output), 'timeout');
-  check(timeout.durationMs >= 29000 && timeout.durationMs < 39000, 'timeout duration');
-  console.log('OK: real 30-second timeout and SIGKILL');
+  for (const terminateGraceMs of [0, 1, 1000, 5000, 30000]) {
+    apply(ctx, { codexBin: js, terminateGraceMs });
+    const configuredGrace = await execute({ mode: 'text' });
+    check(configuredGrace.ok && configuredGrace.output === 'FAKE JS OK' &&
+      !/SIGTERM|SIGKILL/.test(configuredGrace.output), 'valid terminateGraceMs config: ' + terminateGraceMs);
+  }
+  for (const terminateGraceMs of [-1, 30001, 0.5, NaN, Infinity, '1000', '', null, false, {}, []]) {
+    apply(ctx, { codexBin: js, terminateGraceMs });
+    const invalidGrace = await execute({ mode: 'text' });
+    check(!invalidGrace.ok && invalidGrace.exitCode === -1 && !invalidGrace.logPath &&
+      invalidGrace.output.includes('terminateGraceMs'), 'invalid terminateGraceMs config: ' + String(terminateGraceMs));
+  }
+  for (const value of ['0', '1000', '30000']) {
+    process.env.DSH_CODEX_TERMINATE_GRACE_MS = value;
+    apply(ctx, { codexBin: js });
+    check((await execute({ mode: 'text' })).ok, 'valid terminateGraceMs environment: ' + value);
+  }
+  for (const value of ['', ' ', '-1', '30001', '0.5', 'NaN', 'Infinity', 'invalid']) {
+    process.env.DSH_CODEX_TERMINATE_GRACE_MS = value;
+    apply(ctx, { codexBin: js });
+    const invalidGrace = await execute({ mode: 'text' });
+    check(!invalidGrace.ok && invalidGrace.exitCode === -1 && !invalidGrace.logPath &&
+      invalidGrace.output.includes('terminateGraceMs'), 'invalid terminateGraceMs environment: ' + JSON.stringify(value));
+  }
+  process.env.DSH_CODEX_TERMINATE_GRACE_MS = 'invalid';
+  apply(ctx, { codexBin: js, terminateGraceMs: 0 });
+  check((await execute({ mode: 'text' })).ok, 'zero terminateGraceMs config beats invalid environment');
+  process.env.DSH_CODEX_TERMINATE_GRACE_MS = '1000';
+  apply(ctx, { codexBin: js, terminateGraceMs: -1 });
+  check(!(await execute({ mode: 'text' })).ok, 'invalid terminateGraceMs config does not fall back to environment');
+  delete process.env.DSH_CODEX_TERMINATE_GRACE_MS;
+  console.log('OK: terminateGraceMs boundaries, invalid values, environment and config precedence');
+  // Separate fake JS CLIs use only the disposable runtime and fixture directories.
+  // Capture each registration explicitly so all real timeout cases can run together.
+  const timeoutCase = async (label, graceful, config) => {
+    const caseDir = join(fixture, 'timeout-' + label);
+    await mkdir(caseDir);
+    const entry = join(caseDir, 'fake-codex.js');
+    await writeFixtureFile(entry, `
+import { writeFileSync, writeSync } from 'node:fs';
+if (process.env.ELECTRON_RUN_AS_NODE !== '1') process.exit(9);
+if (process.argv[2] === '--version') { console.log('codex-cli 0.170.0'); process.exit(0); }
+const outputIndex = process.argv.indexOf('-o');
+if (outputIndex < 0 || !process.argv[outputIndex + 1]) process.exit(7);
+process.on('SIGTERM', () => {
+  writeSync(1, 'FAKE SIGTERM RECEIVED\\n');
+  ${graceful ? `writeFileSync(process.argv[outputIndex + 1], 'FAKE GRACEFUL EXIT 0', { flag: 'wx' });
+  writeSync(1, 'FAKE EXIT 0\\n');
+  process.exit(0);` : '// Deliberately remain alive until the timeout escalates.'}
+});
+writeSync(1, 'FAKE READY\\n');
+setInterval(() => {}, 1000);
+`);
+    let timeoutTool;
+    apply({ tools: { register(def) {
+      if (def.name === 'computer_use_codex') timeoutTool = def;
+    } } }, { codexBin: entry, ...config });
+    const timedOut = await execute({ mode: 'text', cwd: caseDir, timeoutSeconds: 30 }, timeoutTool);
+    const processLog = await readFile(timedOut.logPath, 'utf8');
+    check(!timedOut.ok && timedOut.exitCode === -1 && /timed out|超时/i.test(timedOut.output), label + ' timeout remains failure');
+    check(processLog.includes('FAKE READY'), label + ' fake CLI started');
+    return { result: timedOut, log: processLog };
+  };
+  const timeoutCases = await Promise.allSettled([
+    timeoutCase('graceful', true, {}),
+    timeoutCase('escalated', false, { terminateGraceMs: 1000 }),
+    timeoutCase('immediate', false, { terminateGraceMs: 0 }),
+  ]);
+  for (const outcome of timeoutCases) if (outcome.status === 'rejected') throw outcome.reason;
+  const [gracefulTimeout, escalatedTimeout, immediateTimeout] = timeoutCases.map(outcome => outcome.value);
+  check(gracefulTimeout.result.durationMs >= 29000 && gracefulTimeout.result.durationMs < 35000,
+    'graceful timeout returns near 30 seconds: ' + gracefulTimeout.result.durationMs);
+  check(gracefulTimeout.result.output.includes('SIGTERM requested') && !gracefulTimeout.result.output.includes('SIGKILL') &&
+    gracefulTimeout.log.includes('FAKE SIGTERM RECEIVED') && gracefulTimeout.log.includes('FAKE EXIT 0'),
+    'default grace allows SIGTERM handler to exit zero but preserves timeout failure');
+  check(escalatedTimeout.result.durationMs >= 30900 && escalatedTimeout.result.durationMs < 37000,
+    'escalated timeout returns near 31 seconds: ' + escalatedTimeout.result.durationMs);
+  check(escalatedTimeout.result.output.includes('SIGTERM') && escalatedTimeout.result.output.includes('escalated to SIGKILL') &&
+    escalatedTimeout.log.includes('FAKE SIGTERM RECEIVED') && !escalatedTimeout.log.includes('FAKE EXIT 0'),
+    'ignored SIGTERM escalates to SIGKILL after configured grace');
+  check(immediateTimeout.result.durationMs >= 29000 && immediateTimeout.result.durationMs < 35000,
+    'zero-grace timeout returns near 30 seconds: ' + immediateTimeout.result.durationMs);
+  check(immediateTimeout.result.output.includes('SIGKILL requested directly') && !immediateTimeout.result.output.includes('SIGTERM') &&
+    !immediateTimeout.log.includes('FAKE SIGTERM RECEIVED'), 'zero grace skips SIGTERM and requests SIGKILL directly');
+  console.log('OK: concurrent real timeouts, SIGTERM exit zero (~30s), SIGKILL escalation (~31s), direct SIGKILL (~30s)');
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
   check(!manifest.dependencies && manifest.dsh.bundle.patch === './cordis.patch.yml', 'manifest');
   check(manifest.name === 'dsh-tool-codex-computer-use' && !manifest.private && manifest.license === 'MIT' && manifest.engines.node === '>=20' && manifest.keywords.includes('dsh-plugin'), 'public metadata');

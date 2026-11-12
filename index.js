@@ -293,6 +293,12 @@ async function run(args, config) {
     if (!Number.isInteger(seconds) || seconds < 30 || seconds > 3600) {
       return result(false, -1, 'Invalid configured timeoutSeconds: expected an integer from 30 to 3600.');
     }
+    const graceEnv = process.env.DSH_CODEX_TERMINATE_GRACE_MS;
+    const terminateGraceMs = config.terminateGraceMs !== undefined ? config.terminateGraceMs
+      : graceEnv === undefined ? 5000 : graceEnv.trim() ? Number(graceEnv) : NaN;
+    if (!Number.isInteger(terminateGraceMs) || terminateGraceMs < 0 || terminateGraceMs > 30000) {
+      return result(false, -1, 'Invalid terminateGraceMs / DSH_CODEX_TERMINATE_GRACE_MS: expected an integer from 0 to 30000.');
+    }
     if (!['bypass', 'workspace-write'].includes(securityMode)) return result(false, -1, 'Invalid securityMode: expected bypass or workspace-write.');
     const codexBin = await resolveCodexBin(config);
     const nodeExec = codexBin.endsWith('.js') ? resolveNodeExec() : undefined;
@@ -336,34 +342,86 @@ async function run(args, config) {
         stdio: ['ignore', log.fd, log.fd], detached: process.platform !== 'win32',
       });
       let timedOut = false;
+      let forcedKill = false;
+      let exited = false;
       let spawnError;
-      const timer = setTimeout(() => {
-        timedOut = true;
+      let timer, graceTimer;
+      const clearTimers = () => {
+        clearTimeout(timer);
+        clearTimeout(graceTimer);
+      };
+      const terminate = signal => {
+        if (exited) return;
+        const fallback = () => {
+          if (!exited) {
+            try { child.kill(signal); } catch {}
+          }
+        };
         if (PLATFORM === 'win32') {
-          const fallback = () => child.kill();
+          if (!child.pid) return fallback();
+          let fellBack = false;
+          const fallbackOnce = () => {
+            if (fellBack) return;
+            fellBack = true;
+            fallback();
+          };
           try {
-            const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
-            killer.once('error', fallback);
-            killer.once('exit', code => { if (code !== 0) fallback(); });
-          } catch { fallback(); }
+            const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', ...(signal === 'SIGKILL' ? ['/F'] : [])], { stdio: 'ignore' });
+            killer.once('error', fallbackOnce);
+            killer.once('exit', code => { if (code !== 0) fallbackOnce(); });
+          } catch { fallbackOnce(); }
         } else {
           try {
-            if (child.pid) process.kill(-child.pid, 'SIGKILL');
-            else child.kill('SIGKILL');
-          } catch { child.kill('SIGKILL'); }
+            if (child.pid) process.kill(-child.pid, signal);
+            else fallback();
+          } catch { fallback(); }
         }
+      };
+      timer = setTimeout(() => {
+        if (exited) return;
+        timedOut = true;
+        if (terminateGraceMs === 0) {
+          forcedKill = true;
+          terminate('SIGKILL');
+          return;
+        }
+        terminate('SIGTERM');
+        graceTimer = setTimeout(() => {
+          if (exited) return;
+          forcedKill = true;
+          terminate('SIGKILL');
+        }, terminateGraceMs);
       }, seconds * 1000);
-      child.once('error', error => { spawnError = error; });
+      child.once('error', error => {
+        spawnError = error;
+        // A failed kill can also emit error; only a failed spawn means no process.
+        if (!child.pid) {
+          exited = true;
+          clearTimers();
+        }
+      });
+      child.once('exit', () => {
+        exited = true;
+        clearTimers();
+      });
       child.once('close', (code, signal) => {
-        clearTimeout(timer);
-        resolveStatus({ code, signal, timedOut, spawnError });
+        exited = true;
+        clearTimers();
+        resolveStatus({ code, signal, timedOut, forcedKill, spawnError });
       });
     });
     await log.close();
     log = undefined;
-    if (status.timedOut) return result(false, -1, `Codex timed out after ${seconds} seconds (超时); ${PLATFORM === 'win32'
-      ? 'process-tree termination requested via taskkill /T /F (child.kill() fallback).'
-      : 'terminated with SIGKILL.'}`);
+    if (status.timedOut) {
+      const term = PLATFORM === 'win32' ? 'SIGTERM requested via taskkill /T' : 'SIGTERM requested';
+      const kill = PLATFORM === 'win32' ? 'SIGKILL via taskkill /T /F' : 'SIGKILL';
+      const termination = terminateGraceMs === 0
+        ? `SIGKILL requested directly (terminateGraceMs=0)${PLATFORM === 'win32' ? ' via taskkill /T /F' : ''}.`
+        : status.forcedKill
+          ? `${term}; escalated to ${kill} after ${terminateGraceMs} ms grace period.`
+          : `${term}; process exited during the ${terminateGraceMs} ms grace period.`;
+      return result(false, -1, `Codex timed out after ${seconds} seconds (超时); ${termination}`);
+    }
     if (status.spawnError) return result(false, -1, `Cannot start Codex: ${status.spawnError.message}`);
     let output;
     try { output = await readFile(lastMessage, 'utf8'); }
@@ -391,7 +449,8 @@ export function apply(ctx, config = {}) {
   const tool = {
     name: 'computer_use_codex',
     description: 'Delegate a one-shot local desktop task to Codex and return its brief conclusion and screenshot paths. With mode=text, delegate a pure text task without operating the desktop. Runs autonomously without follow-up questions. Model, reasoning effort and service tier default to the local Codex configuration and can be overridden per call.',
-    timeoutMs: 3610000,
+    // Allow the maximum task timeout, 30-second grace and preflight overhead.
+    timeoutMs: 3650000,
     parameters: {
       type: 'object',
       additionalProperties: false,
