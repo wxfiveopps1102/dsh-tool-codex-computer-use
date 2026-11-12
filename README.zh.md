@@ -21,10 +21,10 @@
 | 平台 | `mode=text` | `mode=desktop` |
 | --- | --- | --- |
 | macOS | 支持 | 已实测：计算器 `7×8=56` |
-| Windows | 已实测 | 已实测：记事本输入 `hello`，6 张截图，状态栏「5 个字符」可核验 |
+| Windows | 已实测 | 已实测：Windows 11 Pro + DSH 0.2.2-rc.2 + Codex CLI 0.167.2；记事本真实输入 `hello`，3 张截图，状态栏「5 个字符」可核验 |
 | Linux | 支持 | 不保证 |
 
-文本模式的前提是本机可运行 Codex CLI。Windows 实测环境为 **Windows + DSH 0.2.2-rc.2 + Codex CLI 0.167.2**，由用户提供，测试时临时补齐了 status 工具缺失的 `output` 声明；此修复已纳入代码，本轮未重跑真实 GUI。
+文本模式的前提是本机可运行 Codex CLI。Windows 验收记录日期为 **2026-11-12**，由用户提供：DSH Desktop 使用 `desktop` profile，Node v24.14.0、npm 11.9.0，ChatGPT 登录（`planType: prolite`）。四层测试均通过；手动重启 DSH 后两个工具首次调用即成功，无 `must declare output` 告警，`application: applied`、`warnings: []`。插件 SHA 与 commit `e99d5a4` 一致，完整结果见[跨平台验收记录](RELEASE.md#跨平台验收记录)；本轮文档更新未重跑。
 
 ## 与 DSH 自带 subagent_codex 的关系
 
@@ -129,7 +129,7 @@ model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(conf
 
 ## 返回与真实证据
 
-用户提供的 Windows 实测（DSH 0.2.2-rc.2 + Codex CLI 0.167.2，临时补齐 status `output` 后，本轮未重跑）：体检返回 10 个模型、`codexVersion: "0.167.2"`、`planType: "prolite"`；`mode=text` 为 `ok:true`，耗时 54.1 秒；`mode=desktop` 为 `ok:true`，耗时 121.8 秒。记事本真实输入 `hello`，6 张截图，状态栏「5 个字符」可核验。操作说明见 [Windows 测试指南](docs/WINDOWS-TEST.md)。
+用户提供的 Windows 11 Pro 实测（DSH 0.2.2-rc.2 + Codex CLI 0.167.2，commit `e99d5a4`，本轮未重跑）：smoke PASS、exit 0；体检返回 10 个模型、`codexVersion: "0.167.2"`、`planType: "prolite"`、`warnings: []`、`platform: "win32"`、`platformLabel: "Windows"`、`osVersion: "Windows 11 Pro"`；`mode=text` 为 `ok:true`，耗时 52.3 秒，`controls: "model=gpt-6.1-sol(config) reasoningEffort=high(config) serviceTier=priority(config)"`；`mode=desktop` 为 `ok:true`，耗时 100.5 秒。记事本真实输入 `hello`，3 张截图，状态栏「5 个字符」可核验。最新验收见 [RELEASE](RELEASE.md#跨平台验收记录)，操作说明见 [Windows 测试指南](docs/WINDOWS-TEST.md)（其中保留上一轮临时修复测试记录）。
 
 `computer_use_codex` 返回 `ok`、`exitCode`、`mode`、`codexVersion`、`warnings`、`durationMs`、`output`、`controls`（生效的覆盖值及来源）、安全模式说明，日志创建成功时附 `logPath`。**`ok:true` 仅表示 CLI 正常退出，不等于任务目标达成**；桌面任务结合截图复核，文本任务核对返回文本。输出最多 8000 个 JavaScript 字符；两种模式的完整日志均保存在私有临时目录，最终消息文件自动删除。日志和截图可能包含敏感信息，需要手动清理。桌面模式截图默认保留 `<cwd>/.codex-cu/`，也可配置；提示词不保证截图生成。文本模式不创建该目录。
 
@@ -165,7 +165,7 @@ pkill -f SkyComputerUseClient; killall SkyComputerUseService 2>/dev/null
 ELECTRON_RUN_AS_NODE=1 "/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" test/smoke.mjs
 ```
 
-仅运行假 CLI：Windows 使用 `.js` 文件，由插件通过 Node 启动；其他平台保留 shell 假 CLI。Windows 可运行 `node test/smoke.mjs`。覆盖注册失败保护、JS 假 CLI 各命令和三类真实 30 秒超时；POSIX 验证 TERM 处理、升级 KILL、直接 KILL，Windows 验证有界超时与 taskkill 终止请求，不依赖 POSIX 信号处理器。不操作桌面；本轮未在原生 Windows 执行 smoke，未验证真实保守模式 GUI、profile 安装、npm 发布。
+仅运行假 CLI：Windows 使用 `.js` 文件，由插件通过 Node 启动；其他平台保留 shell 假 CLI。Windows 可运行 `node test/smoke.mjs`。覆盖注册失败保护、JS 假 CLI 各命令和三类真实 30 秒超时；POSIX 验证 TERM 处理、升级 KILL、直接 KILL，Windows 验证有界超时与 taskkill 终止请求，不依赖 POSIX 信号处理器。不操作桌面；用户提供的原生 Windows smoke 结果为 PASS、exit 0，本轮仅记录，未重跑。真实保守模式 GUI、干净 profile 的正式安装及 npm 发布仍未验证。
 
 同意独立 unscoped npm 包与仓库 `dsh-plugin` topic：Host 工具与文本委派 provider 职责不同，不向现有 provider 强塞桌面能力；维护、安全审查由发布者承担。
 

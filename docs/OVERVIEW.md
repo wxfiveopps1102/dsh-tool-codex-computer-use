@@ -44,6 +44,8 @@ bundle patch 插入插件；`apply` 注入 `tools`，注册两个工具，由 ef
 
 据 [RELEASE](../RELEASE.md)：smoke PASS；`dsh-standards` blocking 0、2 条 advisory WARN，另有 7 项 partial。真实 GUI（3×9=27）与文本委派各有一次成功记录。本轮仅只读审查，未重跑；缺独立检查报告及完整原始调用。
 
+Windows（2026-11-12，用户提供）：Windows 11 Pro + DSH Desktop 0.2.2-rc.2（`desktop` profile）+ Codex CLI 0.167.2，Node v24.14.0、npm 11.9.0，ChatGPT 登录（`planType: prolite`）；smoke PASS、exit 0，体检 10 模型、`warnings: []`，text `ok:true` / 52.3s，desktop `ok:true` / 100.5s，记事本真实输入 `hello`、状态栏「5 个字符」、3 张截图。重启 DSH 后两个工具首次调用即成功，无 `must declare output` 告警，`application: applied`、`warnings: []`；插件 SHA 与 commit `e99d5a4` 一致，完整体检字段与 SHA 见[跨平台验收记录](../RELEASE.md#跨平台验收记录)。本轮仅同步文档，未重跑。
+
 ## 7. 未完善清单
 
 版本核对：`package.json` 与 RELEASE 均为 0.1.0。以下保留 12 项跟踪记录，其中 profile 兜底已修复，发布身份与包元数据已补齐，其余 9 项待完善；严重度按发布与运行影响评估。

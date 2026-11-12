@@ -1,6 +1,6 @@
 # 发布收尾记录：dsh-tool-codex-computer-use 0.1.0
 
-本包是通过本机 Codex CLI 执行一次性 macOS 桌面或文本任务的 DSH Host 工具，提供 `computer_use_codex` 和环境体检工具 `computer_use_codex_status`。
+本包是通过本机 Codex CLI 执行一次性 macOS / Windows 桌面或文本任务的 DSH Host 工具，提供 `computer_use_codex` 和环境体检工具 `computer_use_codex_status`。
 
 ## 定位与差异
 
@@ -30,6 +30,23 @@
 | 真实 GUI 回归 | `computer_use_codex` 工具执行计算器 3×9 并截图；完整原始参数未提供。 | `{"ok":true,"exitCode":0,"durationMs":54626,...}`；lead 已核实计算器显示 27。 | 工作区根目录 `.codex-cu/calculator-result-27.jpg`，本轮只读确认文件存在，未重新调用 GUI。 |
 | 模型/档位可配置 | `computer_use_codex` 执行计算器 `23×17` 三次；完整原始参数未提供。 | 三次均为 `23×17=391`；`controls` 中 `reasoningEffort` 依次为 `high` / `low` / `high`，对应耗时 `40.4s` / `42.1s` / `37.2s`。 | 引用任务提供的历史实测，本轮未重跑；完整 `controls` 原文、日志及截图路径未提供，不补写来源后缀。 |
 
+## 跨平台验收记录
+
+验证日期：macOS 为 **2026-11-12**（既有验收记录），Windows 为 **2026-11-12**（本次用户回传）。macOS 沿用仓库已记录的结果，Windows 引用用户提供的实测事实；本轮仅同步文档，未重跑测试或 GUI。
+
+| 平台 | 环境 | 四层结果 | SHA（`index.js` SHA256） |
+| --- | --- | --- | --- |
+| macOS | 系统具体版本未记录；DSH 0.2.2-rc.2；Codex CLI 0.167.2；Codex 桌面端 26.1106.51428；ChatGPT 登录，`planType: prolite` | smoke：PASS，exit 0；体检：10 模型，`codexVersion: "0.167.2"`，`warnings: []`；text：`ok:true`，34.776s；desktop：`ok:true`，54.626s，计算器 `3×9=27`，证据 `.codex-cu/calculator-result-27.jpg` | 历史实测未记录，不补推 |
+| Windows | Windows 11 Pro；DSH Desktop 0.2.2-rc.2（`desktop` profile）；Node v24.14.0；npm 11.9.0；Codex CLI 0.167.2；ChatGPT 登录，`planType: prolite` | smoke：PASS，exit 0；体检：10 模型，`codexVersion: "0.167.2"`，`planType: "prolite"`，`warnings: []`，`platform: "win32"`，`platformLabel: "Windows"`，`osVersion: "Windows 11 Pro"`；text：`ok:true`，52.3s；desktop：`ok:true`，100.5s，记事本真实输入 `hello`，状态栏「5 个字符」，3 张截图 | `F0A27BB7FEAC76F9421870964B5653ED2CB973138FF7CFC6232BD85F54F8EDF3`，与仓库 commit `e99d5a4` 一致 |
+
+Windows 文本任务的 `controls` 原文：
+
+```text
+model=gpt-6.1-sol(config) reasoningEffort=high(config) serviceTier=priority(config)
+```
+
+Windows 冷启动验收：手动重启 DSH 后，`computer_use_codex_status` 与 `computer_use_codex` 两个工具首次调用即成功，无 `must declare output` 告警；`application: applied`，`warnings: []`。本次结果对应上述 SHA 的仓库版本，无需临时补写 `output` 声明；本次 52.3s / 100.5s、3 张截图与早期临时修复测试的 54.1s / 121.8s、6 张截图属于不同轮次。
+
 ## 变更记录
 
 - `mode` 参数：`computer_use_codex` 支持 `desktop`（默认）/`text`，结果含 `mode`。文本模式用于不操作桌面的纯文本任务，不创建截图目录、不附加桌面或截图指令；安全模式保持原配置，不禁用 Codex 插件。任务提供的本机文本实测：`ok:true`、`durationMs:34776`、`codexVersion: "0.167.2"`，`controls: "model=gpt-6.1-sol(config) reasoningEffort=high(config) serviceTier=priority(config)"`。本轮仅同步文档，未重跑。
@@ -39,7 +56,7 @@
 
 ## 发布形态与步骤
 
-采用独立、unscoped npm 包 `dsh-tool-codex-computer-use@0.1.0`，配套 GitHub 仓库与社区市场目录条目。以下仅为待执行步骤，本轮没有执行发布、push 或 commit。
+采用独立、unscoped npm 包 `dsh-tool-codex-computer-use@0.1.0`，配套 GitHub 仓库与社区市场目录条目。以下为 npm 发布与市场提交的待执行步骤；验收文档的提交与推送不代表已完成 npm 发布或市场收录。
 
 1. 核对下节已填写的身份与仓库信息，补齐徽章；由 lead 验收链接问题、检查结果及风险接受记录，并确认 npm 包名可用性与账号发布权限。
 2. 在 `packages/dsh-tool-codex-computer-use/` 目录执行 `npm publish --access public`。

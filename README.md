@@ -21,10 +21,10 @@ Call `computer_use_codex` with `{"task":"Calculate 7×8 and verify by screenshot
 | Platform | `mode=text` | `mode=desktop` |
 | --- | --- | --- |
 | macOS | Supported | Tested: Calculator `7×8=56` |
-| Windows | Tested | Tested: Notepad entered `hello`; six screenshots, with the status bar showing 5 characters |
+| Windows | Tested | Tested: Windows 11 Pro + DSH 0.2.2-rc.2 + Codex CLI 0.167.2; Notepad contained `hello`, with three screenshots and a status bar showing 5 characters |
 | Linux | Supported | Not guaranteed |
 
-Text mode requires a working local Codex CLI. Windows evidence was supplied by the user on Windows + DSH **0.2.2-rc.2** + Codex CLI **0.167.2**, after temporarily adding the missing status-tool `output` declaration. The fix is now included; these GUI tests were not rerun for this change.
+Text mode requires a working local Codex CLI. The user-supplied Windows verification is recorded on **2026-11-12**: DSH Desktop with the `desktop` profile, Node v24.14.0, npm 11.9.0, and ChatGPT login (`planType: prolite`). All four layers passed. After manually restarting DSH, both tools succeeded on their first calls, with no `must declare output` warning, `application: applied`, and `warnings: []`. The plugin SHA matches commit `e99d5a4`; see the [cross-platform verification record](RELEASE.md#跨平台验收记录) for full results. Tests were not rerun for this documentation update.
 
 ## Relationship with DSH's built-in subagent_codex
 
@@ -127,7 +127,7 @@ Before running a task, the plugin probes `codex --version` using the resolved en
 
 ## Results and real evidence
 
-User-supplied Windows results (DSH 0.2.2-rc.2 + Codex CLI 0.167.2, after temporarily fixing status `output`; not rerun here): status returned 10 models, `codexVersion: "0.167.2"` and `planType: "prolite"`; `mode=text` returned `ok:true` in 54.1 s; `mode=desktop` returned `ok:true` in 121.8 s. Notepad contained `hello`, with six screenshots and a status bar showing 5 characters. See the [Windows test guide](docs/WINDOWS-TEST.md).
+User-supplied Windows 11 Pro results (DSH 0.2.2-rc.2 + Codex CLI 0.167.2, commit `e99d5a4`; not rerun here): smoke PASS, exit 0; status returned 10 models, `codexVersion: "0.167.2"`, `planType: "prolite"`, `warnings: []`, `platform: "win32"`, `platformLabel: "Windows"`, and `osVersion: "Windows 11 Pro"`; `mode=text` returned `ok:true` in 52.3 s with `controls: "model=gpt-6.1-sol(config) reasoningEffort=high(config) serviceTier=priority(config)"`; `mode=desktop` returned `ok:true` in 100.5 s. Notepad contained `hello`, with three screenshots and a status bar showing 5 characters. See [RELEASE](RELEASE.md#跨平台验收记录) for the latest verification and the [Windows test guide](docs/WINDOWS-TEST.md) for instructions (the guide retains the earlier temporary-fix test record).
 
 `computer_use_codex` returns `ok`, `exitCode`, `mode`, `codexVersion`, `warnings`, `durationMs`, `output`, `controls` (effective overrides and sources), security fields, and `logPath` when available. **`ok:true` means successful CLI exit, not achievement of the task objective.** Review screenshots for desktop tasks and the returned text for text tasks. Output is limited to 8000 JavaScript characters. Full logs remain in a private system temporary directory in both modes; final-message files are deleted. Logs/screenshots may contain sensitive data and require manual cleanup. In desktop mode, screenshots are requested as `.jpg` in `<cwd>/.codex-cu/` by default; prompts do not guarantee creation. Text mode does not create this directory.
 
@@ -163,6 +163,6 @@ From this package directory:
 ELECTRON_RUN_AS_NODE=1 "/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" test/smoke.mjs
 ```
 
-Tests use fake CLIs only: Windows uses `.js` files through the plugin's Node launcher; other platforms retain shell fixtures. Run `node test/smoke.mjs` with Node on Windows. Registration failures, JS fixture commands and three real 30-second timeouts are covered. POSIX tests assert TERM handling, KILL escalation and direct KILL; Windows asserts bounded timeouts and taskkill termination requests without assuming POSIX signal handlers. No desktop operation is performed. Native Windows smoke, real conservative-mode GUI behavior, profile installation and publication were not verified in this change.
+Tests use fake CLIs only: Windows uses `.js` files through the plugin's Node launcher; other platforms retain shell fixtures. Run `node test/smoke.mjs` with Node on Windows. Registration failures, JS fixture commands and three real 30-second timeouts are covered. POSIX tests assert TERM handling, KILL escalation and direct KILL; Windows asserts bounded timeouts and taskkill termination requests without assuming POSIX signal handlers. No desktop operation is performed. The user supplied a native Windows smoke PASS with exit 0; this documentation update records that result without rerunning it. Real conservative-mode GUI behavior, normal installation into a clean profile, and npm publication remain unverified.
 
 The author and MIT copyright holder are `wx5`. Repository metadata uses `https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use`, with `wxfiveopps1102` as the GitHub owner; the repository has not yet been created. Confirm npm name availability and ownership; tag the actual repository `dsh-plugin` for directory submission. The independent unscoped package keeps Host tool semantics separate from subagent providers; maintainers own security review and ongoing maintenance. MIT licensed.
