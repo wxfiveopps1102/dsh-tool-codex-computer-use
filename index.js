@@ -244,7 +244,7 @@ function truncate(text) {
 const NAME_ARG = /^[a-z][a-z0-9_.-]{0,63}$/;
 
 function validate(args) {
-  const allowed = ['task', 'mode', 'cwd', 'timeoutSeconds', 'model', 'reasoningEffort', 'serviceTier'];
+  const allowed = ['task', 'mode', 'verify', 'ephemeral', 'cwd', 'timeoutSeconds', 'model', 'reasoningEffort', 'serviceTier'];
   if (!args || typeof args !== 'object' || Array.isArray(args) ||
       Object.keys(args).some(key => !allowed.includes(key))) {
     throw new Error(`Invalid parameters: expected task plus optional ${allowed.slice(1).join(', ')}.`);
@@ -256,28 +256,38 @@ function validate(args) {
   if (args.timeoutSeconds !== undefined && (!Number.isInteger(args.timeoutSeconds) || args.timeoutSeconds < 30 || args.timeoutSeconds > 3600)) {
     throw new Error('timeoutSeconds must be an integer from 30 to 3600.');
   }
+  // Report new option errors in the result while preserving legacy validation.
+  if (args.verify !== undefined && !['strict', 'final', 'none'].includes(args.verify)) {
+    return 'Invalid verify: expected strict, final or none.';
+  }
+  if (args.ephemeral !== undefined && typeof args.ephemeral !== 'boolean') {
+    return 'Invalid ephemeral: expected a boolean.';
+  }
 }
 
 async function run(args, config) {
-  validate(args);
+  const validationError = validate(args);
   const start = Date.now();
   let logPath, log, lastMessage;
   const mode = args.mode === undefined ? 'desktop' : args.mode;
+  let verify = 'none';
   const securityMode = config.securityMode ?? process.env.DSH_CODEX_SECURITY_MODE ?? 'bypass';
   const selected = {};
   let controls = 'inherited from Codex config';
   let codexVersion = 'unknown';
   const warnings = [];
   const result = (ok, exitCode, output) => ({
-    ok, exitCode, mode: typeof mode === 'string' ? mode : 'invalid', codexVersion, warnings, securityMode: String(securityMode), controls, securityNotice: securityMode === 'bypass'
+    ok, exitCode, mode: typeof mode === 'string' ? mode : 'invalid', verify, codexVersion, warnings, securityMode: String(securityMode), controls, securityNotice: securityMode === 'bypass'
       ? 'Approvals and sandbox disabled; Codex can operate the local desktop and files.'
       : 'Workspace-write sandbox requested; GUI access may fail. External desktop effects are not rolled back.', durationMs: Math.max(0, Date.now() - start), output: truncate(output),
     ...(logPath ? { logPath } : {}),
   });
   try {
+    if (validationError) return result(false, -1, validationError);
     if (!['desktop', 'text'].includes(mode)) {
       return result(false, -1, 'Invalid mode: expected desktop or text.');
     }
+    verify = mode === 'desktop' ? args.verify ?? 'strict' : 'none';
     // Validate only the effective value; Codex owns the supported vocabulary.
     for (const [key, env] of Object.entries({
       model: 'DSH_CODEX_MODEL',
@@ -316,7 +326,7 @@ async function run(args, config) {
     // Do not create a misspelled working directory implicitly.
     await access(cwd);
     let screenshots;
-    if (mode === 'desktop') {
+    if (mode === 'desktop' && verify !== 'none') {
       screenshots = resolve(cwd, config.screenshotDir ?? process.env.DSH_CODEX_SCREENSHOT_DIR ?? '.codex-cu');
       await mkdir(screenshots, { recursive: true });
     }
@@ -324,11 +334,20 @@ async function run(args, config) {
     lastMessage = join(temp, 'last-message.txt');
     log = await open(join(temp, 'process.log'), 'wx', 0o600);
     logPath = join(temp, 'process.log');
+    const verificationInstructions = verify === 'none' ? [] : [
+      'Before taking any action, confirm that the current page, window, and category match the task description by checking the URL, breadcrumbs, or window title. If the context does not match, stop and report the mismatch; do not switch to or proceed with a similar target.',
+      ...(verify === 'final' ? ['Verify the final result with exactly one screenshot at the end. Do not capture intermediate steps.'] : []),
+      verify === 'strict'
+        ? `Save screenshots as .jpg files in ${JSON.stringify(screenshots)}; create that directory if needed.`
+        : `Save that image as a .jpg file in ${JSON.stringify(screenshots)}; create that directory if needed.`,
+    ];
     const prompt = (mode === 'desktop' ? [
       `Operate the local ${platformLabel(PLATFORM)} desktop fully automatically. Never ask the user questions.`,
-      'Prefer your computer-use / browser plugins. Verify every operation with a screenshot.',
-      `Save screenshots as .jpg files in ${JSON.stringify(screenshots)}; create that directory if needed.`,
-      'Finish with a brief conclusion in the same language as the task: what you did, the result, and screenshot paths.',
+      verify === 'strict'
+        ? 'Prefer your computer-use / browser plugins. Verify every operation with a screenshot.'
+        : 'Prefer your computer-use / browser plugins.',
+      ...verificationInstructions,
+      `Finish with a brief conclusion in the same language as the task: what you did, the result${verify === 'strict' ? ', and screenshot paths' : verify === 'final' ? ', and the image path' : ''}.`,
     ] : [
       'Complete this one-shot task. Never ask the user questions.',
       'Finish with a brief conclusion in the same language as the task.',
@@ -341,7 +360,8 @@ async function run(args, config) {
     if (selected.model) overrides.push('-m', selected.model.value);
     if (selected.reasoningEffort) overrides.push('-c', `model_reasoning_effort=${JSON.stringify(selected.reasoningEffort.value)}`);
     if (selected.serviceTier) overrides.push('-c', `service_tier=${JSON.stringify(selected.serviceTier.value)}`);
-    const argv = ['exec', '-C', cwd, '--skip-git-repo-check', ...securityArgs, ...overrides, '-o', lastMessage, prompt];
+    const argv = ['exec', '-C', cwd, '--skip-git-repo-check', ...securityArgs, ...overrides,
+      ...(args.ephemeral === true ? ['--ephemeral'] : []), '-o', lastMessage, prompt];
     const js = codexBin.endsWith('.js');
     const status = await new Promise(resolveStatus => {
       const child = spawn(js ? nodeExec : codexBin, js ? [codexBin, ...argv] : argv, {
@@ -455,7 +475,7 @@ async function run(args, config) {
 export function apply(ctx, config = {}) {
   const tool = {
     name: 'computer_use_codex',
-    description: 'Delegate a one-shot local desktop task to Codex and return its brief conclusion and screenshot paths. With mode=text, delegate a pure text task without operating the desktop. Runs autonomously without follow-up questions. Model, reasoning effort and service tier default to the local Codex configuration and can be overridden per call.',
+    description: 'Delegate a one-shot local desktop task to Codex and return its brief conclusion and any screenshot paths. With mode=text, delegate a pure text task without operating the desktop. Runs autonomously without follow-up questions. Model, reasoning effort and service tier default to the local Codex configuration and can be overridden per call.',
     // Allow the maximum task timeout, 30-second grace and preflight overhead.
     timeoutMs: 3650000,
     parameters: {
@@ -464,6 +484,8 @@ export function apply(ctx, config = {}) {
       properties: {
         task: { type: 'string', description: 'Task in natural language; must not be empty.' },
         mode: { type: 'string', enum: ['desktop', 'text'], description: 'Delegation mode: desktop (default) or text for a pure text task.' },
+        verify: { type: 'string', enum: ['strict', 'final', 'none'], default: 'strict', description: 'Desktop screenshot verification: strict verifies every operation (default), final verifies once at the end, none adds no screenshot requirement. Ignored in text mode, where the effective value is none.' },
+        ephemeral: { type: 'boolean', default: false, description: 'Pass --ephemeral to codex exec to disable session-file persistence (default false). Process logs and requested screenshots are still written.' },
         cwd: { type: 'string', description: 'Existing working directory; defaults to the current process directory.' },
         timeoutSeconds: { type: 'integer', description: 'Timeout override in seconds, 30–3600; defaults to the configured timeout (600 seconds initially).' },
         model: { type: 'string', description: 'Codex model id for this run, e.g. gpt-6.1-sol; omit to use the local Codex default.' },
@@ -479,6 +501,7 @@ export function apply(ctx, config = {}) {
           ok: { type: 'boolean' },
           exitCode: { type: 'integer' },
           mode: { type: 'string' },
+          verify: { type: 'string', enum: ['strict', 'final', 'none'], description: 'Effective screenshot verification policy; none in text mode.' },
           codexVersion: { type: 'string', description: 'Detected Codex CLI semver, or unknown if unavailable.' },
           warnings: { type: 'array', items: { type: 'string' }, description: 'Non-fatal CLI version preflight warnings.' },
           securityMode: { type: 'string' },
@@ -488,7 +511,7 @@ export function apply(ctx, config = {}) {
           output: { type: 'string', description: 'Final reply, at most 8000 characters including truncation notice.' },
           logPath: { type: 'string' },
         },
-        required: ['ok', 'exitCode', 'mode', 'codexVersion', 'warnings', 'durationMs', 'output'],
+        required: ['ok', 'exitCode', 'mode', 'verify', 'codexVersion', 'warnings', 'durationMs', 'output'],
       },
       render: (_args, value) => [
         { type: 'text', text: `${value.mode} · ${value.controls} · ${(value.durationMs / 1000).toFixed(1)}s · ${value.ok ? 'ok' : 'failed'}` },

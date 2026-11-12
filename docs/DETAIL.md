@@ -16,6 +16,14 @@
 
 `mode` 没有 config 或环境变量默认值，与 `securityMode` 独立。两种模式共用入口解析、版本探测、覆盖参数、日志、超时及输出处理；文本模式不禁用 Codex 插件，也不构成桌面权限隔离。完整调用参数表见 [中文 README](../README.zh.md#调用参数)。
 
+调用参数 `verify` 为字符串，接受 `strict`（默认）、`final` 或 `none`，结果对象回显其生效值；`mode=text` 时固定为 `none`。
+
+- `strict`：每一步操作后用截图验证；开始前先核对页面/窗口/类目与任务一致，不符即停并报告。逐步验证会产生更多截图，增加 token 消耗与成本。
+- `final`：同样在开始前核对上下文，不符即停并报告；只在结束时截图确认一次。
+- `none`：不要求截图，适合纯文本或信任场景；风险是缺少视觉确认，无法通过截图核验实际页面状态或操作结果。
+
+调用参数 `ephemeral` 为布尔值，默认 `false`；为 `true` 时给 `codex exec` 添加 `--ephemeral`，不把会话文件写入磁盘，减少残留，不改变输出。
+
 `desktop` 提示词读取模块级 `PLATFORM = process.platform`，通过 `platformLabel(p)` 将 `darwin`、`win32`、`linux` 分别映射为 `macOS`、`Windows`、`Linux`；`text` 提示词保持原样。任务子进程在 Windows 上使用 `detached: false`，其他平台使用 `detached: true`。
 
 ## 选择模型 / 推理档位 / 服务层

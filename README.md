@@ -21,8 +21,42 @@ Delegate one-shot desktop and text tasks from DeepSeek Harness (DSH) to your loc
 - **Verifiable results:** inspect returned text, screenshot paths and local logs; timeout handling attempts graceful termination before forcing the process to stop.
 - **macOS and Windows validation:** real desktop runs include macOS Calculator and Windows Notepad; see [Compatibility](#compatibility).
 - **Small Host bundle:** no runtime dependencies; registers tools through `ctx.tools` and invokes the CLI selected by `codexBin`.
+- **No automation primitives:** clicking, scrolling, typing and screenshots are performed by Codex's own computer-use plugins; this plugin only delegates, applies parameters and returns results.
 
-Each task starts a fresh `codex exec` process. Calls are independent and cannot continue a session or ask follow-up questions. Existing measurements suggest about 3–5 seconds of startup overhead; actual timings vary. DSH's built-in `subagent_codex` serves a separate role as a subagent provider; the two can coexist. For direct macOS API automation, see the related [dsh-tool-desktop-use](https://github.com/wxfiveopps1102/dsh-tool-desktop-use) plugin.
+Each task starts a fresh `codex exec` process. Calls are independent and cannot continue a session or ask follow-up questions. Existing measurements suggest about 3–5 seconds of startup overhead; actual timings vary. DSH's built-in `subagent_codex` serves a separate role as a subagent provider; the two can coexist.
+
+## Related work
+
+The DSH community already has several computer-use plugins. The following overview reflects research dated **2026-11-12**; these projects take different approaches to desktop control.
+
+| Project | Platform | Approach |
+| --- | --- | --- |
+| [fangchenghao/dsh-computer-use](https://github.com/fangchenghao/dsh-computer-use) | macOS | Accessibility-first; fresh observations, stale-state rejection and scoped permissions. |
+| [@wangyong1972/dsh-computer-use-macos](https://www.npmjs.com/package/@wangyong1972/dsh-computer-use-macos) | macOS | Screenshots with native mouse and keyboard control. |
+| [dsh-plugin-computer-use](https://www.npmjs.com/package/dsh-plugin-computer-use) | Windows / macOS / Linux | Cua Driver's in-process Rust SDK. |
+| [MoyuDRCC/dsh-computer-use](https://github.com/MoyuDRCC/dsh-computer-use) | Windows | Element targeting through UI Automation. |
+| [gxpppp/dsh-computer-use](https://github.com/gxpppp/dsh-computer-use) | Windows | Reuses Codex's native helper. |
+| [JHyugou/dsh-computer-use](https://github.com/JHyugou/dsh-computer-use) | Windows | Provides 25 tools. |
+
+**What this plugin offers**
+
+| Aspect | This plugin's approach |
+| --- | --- |
+| Two modes | The same `computer_use_codex` tool handles desktop operations with `mode=desktop` and text-only delegation with `mode=text`. |
+| Bring your own CLI and choose model controls | `codexBin` can select any local Codex CLI installation, independent of DSH's bundled **0.153.4** in the snapshot above. Configure the model, reasoning effort and service tier through `model`, `reasoningEffort` and `serviceTier`. |
+| Environment inspection | `computer_use_codex_status` reports the model catalog, plan metadata, CLI and desktop app versions, and an online CLI version comparison. |
+| Cross-platform validation | Both macOS and Windows 11 have been tested; see [Compatibility](#compatibility). |
+
+**Limitations**
+
+| Limitation | Practical impact |
+| --- | --- |
+| No accessibility tree or element targeting | Control relies mainly on coordinates and visual observations, with less precision at the control level than accessibility-first implementations. |
+| Local Codex CLI required | The CLI must be installed and signed in on the host machine. |
+| A separate process for every call | Each call incurs a cold start of a few seconds; existing measurements suggest about 3–5 seconds. |
+| No permission scopes or approval panel | Security boundaries depend on `securityMode` and Codex's own controls. |
+
+**When to choose another plugin:** For element-level precision, choose an accessibility-first implementation such as [fangchenghao/dsh-computer-use](https://github.com/fangchenghao/dsh-computer-use), or evaluate [MoyuDRCC/dsh-computer-use](https://github.com/MoyuDRCC/dsh-computer-use) for Windows UI Automation. For cross-platform control through an in-process SDK without a separate Codex CLI dependency, consider the Cua Driver-based [dsh-plugin-computer-use](https://www.npmjs.com/package/dsh-plugin-computer-use).
 
 ## Requirements
 
@@ -105,6 +139,8 @@ Text mode omits desktop/screenshot instructions and screenshot-directory creatio
 | --- | --- |
 | `task` | Required, non-empty task description. |
 | `mode` | `desktop` (default) or `text`. |
+| `verify` | String: `strict` (default), `final` or `none`. `strict` verifies each action with a screenshot; `final` takes one confirmation screenshot at completion. Both first check that the page/window/category matches the task, stopping and reporting any mismatch. `none` requires no screenshots, for text-only or trusted tasks; forced to `none` in `mode=text`. The result object echoes the effective `verify` value. |
+| `ephemeral` | Boolean, default `false`. When `true`, adds `--ephemeral` to `codex exec` so session files are not written to disk, reducing leftover files without changing output. |
 | `cwd` | Existing working directory; defaults to the Host process directory. |
 | `timeoutSeconds` | Integer, 30–3600; call argument > config > environment > `600`. |
 | `model` | Model ID; inherits the defaults under [Configuration](#configuration). |

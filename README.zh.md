@@ -21,8 +21,42 @@
 - **结果可核验**：查看返回文本、截图路径与本地日志；超时后先尝试优雅终止，再强制结束进程。
 - **macOS 与 Windows 实测**：已有 macOS 计算器与 Windows 记事本的真实桌面证据，见[兼容性](#compatibility)。
 - **轻量 Host bundle**：无运行时依赖，通过 `ctx.tools` 注册工具，调用由 `codexBin` 选择的 CLI。
+- **不实现操作原语**：点击、滚动、输入、截图等操作由 Codex 自身的 computer-use 插件完成；本插件只负责委派、参数控制与结果回传。
 
-每个任务都会启动新的 `codex exec` 进程，调用之间独立，不可续接会话或追问。既有测量显示启动开销约 3–5 秒，实际耗时随任务变化。DSH 自带的 `subagent_codex` 是承担另一类职责的 subagent provider，可与本插件共存。直接调用 macOS API 的自动化方案见相关插件 [dsh-tool-desktop-use](https://github.com/wxfiveopps1102/dsh-tool-desktop-use)。
+每个任务都会启动新的 `codex exec` 进程，调用之间独立，不可续接会话或追问。既有测量显示启动开销约 3–5 秒，实际耗时随任务变化。DSH 自带的 `subagent_codex` 是承担另一类职责的 subagent provider，可与本插件共存。
+
+## 与社区同类插件的关系
+
+DSH 社区已存在多个 computer-use 类插件。以下概览基于 **2026-11-12** 的检索结果；这些项目采用了不同的桌面控制方案。
+
+| 项目 | 平台 | 做法 |
+| --- | --- | --- |
+| [fangchenghao/dsh-computer-use](https://github.com/fangchenghao/dsh-computer-use) | macOS | 可访问性优先（accessibility-first），新鲜观测、过期状态拒绝、作用域权限。 |
+| [@wangyong1972/dsh-computer-use-macos](https://www.npmjs.com/package/@wangyong1972/dsh-computer-use-macos) | macOS | 截图 + 鼠标键盘原生控制。 |
+| [dsh-plugin-computer-use](https://www.npmjs.com/package/dsh-plugin-computer-use) | Windows / macOS / Linux | Cua Driver 的 Rust 进程内 SDK。 |
+| [MoyuDRCC/dsh-computer-use](https://github.com/MoyuDRCC/dsh-computer-use) | Windows | UI Automation 元素寻址。 |
+| [gxpppp/dsh-computer-use](https://github.com/gxpppp/dsh-computer-use) | Windows | 复用 Codex 原生 helper。 |
+| [JHyugou/dsh-computer-use](https://github.com/JHyugou/dsh-computer-use) | Windows | 提供 25 个工具。 |
+
+**本插件的差异**
+
+| 方面 | 本插件的做法 |
+| --- | --- |
+| 双模式 | 同一个 `computer_use_codex` 工具通过 `mode=desktop` 做桌面操作，通过 `mode=text` 做纯文本委派。 |
+| 自选 CLI 与模型控制 | `codexBin` 可指定任意本机 Codex CLI 安装，不受上述快照中 DSH 内置 **0.153.4** 的限制；通过 `model`、`reasoningEffort`、`serviceTier` 分别配置模型、推理档位与服务层。 |
+| 环境体检 | `computer_use_codex_status` 返回模型目录、套餐元数据、CLI 与桌面端版本，以及 CLI 在线版本比对。 |
+| 跨平台已验证 | macOS 与 Windows 11 均已实测，见[兼容性](#compatibility)。 |
+
+**不足**
+
+| 不足 | 实际影响 |
+| --- | --- |
+| 没有可访问性树或元素寻址 | 以坐标与视觉观测为主，控件级精度不如 accessibility-first 的实现。 |
+| 依赖本机 Codex CLI | 需要在本机安装并登录 CLI。 |
+| 每次调用启动独立进程 | 每次调用有约数秒冷启动开销，既有测量约为 3–5 秒。 |
+| 不做权限作用域与审批面板 | 安全边界依赖 `securityMode` 与 Codex 自身的控制。 |
+
+**什么时候选别人：** 需要元素级精度时，可选 [fangchenghao/dsh-computer-use](https://github.com/fangchenghao/dsh-computer-use) 等 accessibility-first 方案；Windows 上也可评估采用 UI Automation 的 [MoyuDRCC/dsh-computer-use](https://github.com/MoyuDRCC/dsh-computer-use)。需要通过进程内 SDK 做跨平台控制、免去独立 Codex CLI 依赖时，可考虑基于 Cua Driver 的 [dsh-plugin-computer-use](https://www.npmjs.com/package/dsh-plugin-computer-use)。
 
 ## 环境要求
 
@@ -105,11 +139,15 @@ dsh plugin --profile desktop add dsh-tool-codex-computer-use
 | --- | --- |
 | `task` | 必填，非空任务描述。 |
 | `mode` | `desktop`（默认）或 `text`。 |
+| `verify` | 字符串：`strict`（默认）、`final` 或 `none`。`strict` 每步操作后用截图验证；`final` 仅在结束时截图确认一次。两者均先核对页面/窗口/类目与任务一致，不符即停并报告。`none` 不要求截图，适合纯文本或信任场景。结果对象回显 `verify` 生效值。 |
+| `ephemeral` | 布尔值，默认 `false`；为 `true` 时给 `codex exec` 添加 `--ephemeral`，不将会话文件写入磁盘，减少残留，不改变输出。 |
 | `cwd` | 已存在的工作目录；默认 Host 进程当前目录。 |
 | `timeoutSeconds` | 整数 30–3600；调用参数 > config > 环境变量 > `600`。 |
 | `model` | 模型 ID；继承规则见[配置](#配置)。 |
 | `reasoningEffort` | 推理档位；与 `model` 使用相同优先级。 |
 | `serviceTier` | 服务层；与 `model` 使用相同优先级。 |
+
+`mode=text` 时，`verify` 固定为 `none`。
 
 ### 环境体检
 

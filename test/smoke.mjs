@@ -89,7 +89,17 @@ try {
   check(captured.parameters.properties.mode.type === 'string' &&
     JSON.stringify(captured.parameters.properties.mode.enum) === '["desktop","text"]' &&
     !captured.parameters.required.includes('mode'), 'optional mode parameter');
+  check(captured.parameters.properties.verify.type === 'string' &&
+    JSON.stringify(captured.parameters.properties.verify.enum) === '["strict","final","none"]' &&
+    captured.parameters.properties.verify.default === 'strict' &&
+    !captured.parameters.required.includes('verify'), 'optional verify parameter defaults to strict');
+  check(captured.parameters.properties.ephemeral.type === 'boolean' &&
+    captured.parameters.properties.ephemeral.default === false &&
+    !captured.parameters.required.includes('ephemeral'), 'optional ephemeral parameter defaults to false');
   check(captured.output.schema.properties.mode.type === 'string' && captured.output.schema.required.includes('mode'), 'mode output schema');
+  check(captured.output.schema.properties.verify.type === 'string' &&
+    JSON.stringify(captured.output.schema.properties.verify.enum) === '["strict","final","none"]' &&
+    captured.output.schema.required.includes('verify'), 'effective verify output schema');
   check(captured.output.schema.properties.codexVersion.type === 'string' &&
     captured.output.schema.properties.warnings.type === 'array' && captured.output.schema.properties.warnings.items.type === 'string' &&
     ['codexVersion', 'warnings'].every(key => captured.output.schema.required.includes(key)), 'version output schema');
@@ -107,7 +117,7 @@ try {
   check(configuredTool.presentCall({ model: 'gpt-6-astra' }).title === 'Computer use (desktop) · gpt-6-astra · high', 'title retains configured effort');
   check(configuredTool.presentCall({ reasoningEffort: 'low' }).title === 'Computer use (desktop) · gpt-6.1-sol · low', 'title retains configured model');
   const fakeValue = {
-    mode: 'desktop', controls: 'model=gpt-6.1-sol(config) reasoningEffort=high(config) serviceTier=priority(config)',
+    mode: 'desktop', verify: 'strict', controls: 'model=gpt-6.1-sol(config) reasoningEffort=high(config) serviceTier=priority(config)',
     durationMs: 52345, ok: true, output: 'FAKE OK',
   };
   const rendered = captured.output.render({}, fakeValue);
@@ -189,6 +199,7 @@ ${jsBody}
     check(Number.isInteger(result.durationMs) && result.durationMs >= 0, 'duration');
     check(result.output.length <= 8000, 'length');
     check(typeof result.mode === 'string', 'mode output type');
+    check(['strict', 'final', 'none'].includes(result.verify), 'effective verify output value');
     check(typeof result.codexVersion === 'string' && Array.isArray(result.warnings) &&
       result.warnings.every(warning => typeof warning === 'string'), 'version output types');
     return result;
@@ -205,19 +216,52 @@ ${jsBody}
   const log = await readFile(success.logPath, 'utf8');
   for (const flag of ['exec', '-C', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', '.codex-cu', 'Never ask', 'same language', 'say ok']) check(log.includes(flag), 'argv/prompt: ' + flag);
   await access(join(fixture, '.codex-cu'));
-  check(success.mode === 'desktop', 'default desktop mode');
+  check(success.mode === 'desktop' && success.verify === 'strict', 'default desktop mode and strict verification');
   const promptFromLog = contents => contents.split('\n-o\n')[1].split('\n').slice(1).join('\n');
+  const argvFromLog = contents => contents.split('\n-o\n')[0].split('\n');
+  check(!argvFromLog(log).includes('--ephemeral'), 'default argv omits --ephemeral');
   check(promptFromLog(log).startsWith(`Operate the local ${platformLabel(process.platform)} desktop fully automatically.`), 'native desktop platform prompt');
   await rm(join(fixture, '.codex-cu'), { recursive: true });
-  const desktop = await execute({ mode: 'desktop' });
-  check(desktop.ok && desktop.mode === 'desktop' &&
+  const desktop = await execute({ mode: 'desktop', verify: 'strict' });
+  check(desktop.ok && desktop.mode === 'desktop' && desktop.verify === 'strict' &&
     promptFromLog(await readFile(desktop.logPath, 'utf8')) === promptFromLog(log), 'default and explicit desktop prompts match');
   await access(join(fixture, '.codex-cu'));
+  const verificationCwd = join(fixture, 'verification-task');
+  await mkdir(verificationCwd);
+  const verificationPrompts = [];
+  // Start with none so an earlier screenshot directory cannot hide a new write.
+  for (const verify of ['none', 'strict', 'final']) {
+    const verified = await execute({ verify, cwd: verificationCwd });
+    check(verified.ok && verified.verify === verify, 'desktop effective verify: ' + verify);
+    const prompt = promptFromLog(await readFile(verified.logPath, 'utf8'));
+    verificationPrompts.push(prompt);
+    if (verify === 'none') {
+      check(!/screenshot|\.codex-cu|\.jpg/i.test(prompt), 'none prompt has no screenshot instructions or paths');
+      check((await readdir(verificationCwd)).length === 0, 'none does not create a screenshot directory');
+      continue;
+    }
+    for (const phrase of ['Before taking any action', 'current page, window, and category match the task description',
+      'URL, breadcrumbs, or window title', 'stop and report the mismatch', 'do not switch to or proceed with a similar target']) {
+      check(prompt.includes(phrase), verify + ' context guard: ' + phrase);
+    }
+    if (verify === 'strict') {
+      check(prompt.includes('Verify every operation with a screenshot.') && prompt.includes('Save screenshots as .jpg files') &&
+        prompt.includes('and screenshot paths.'), 'strict retains per-operation verification, saving and reporting');
+    } else {
+      check(prompt.includes('Verify the final result with exactly one screenshot at the end.') &&
+        prompt.includes('Do not capture intermediate steps.') && !prompt.includes('Verify every operation') &&
+        (prompt.match(/\bscreenshots?\b/gi) ?? []).length === 1, 'final requests exactly one final screenshot');
+      check(prompt.includes('Save that image as a .jpg file') && prompt.includes('and the image path.'), 'final saves and reports its image');
+    }
+    await access(join(verificationCwd, '.codex-cu'));
+  }
+  check(new Set(verificationPrompts).size === 3, 'verify policies generate three distinct desktop prompts');
+  console.log('OK: strict/final/none prompts, effective verify, context mismatch guards, no none screenshot directory');
   const textCwd = join(fixture, 'text-task');
   await mkdir(textCwd);
   const textResult = await execute({ mode: 'text', cwd: textCwd });
   const textPrompt = promptFromLog(await readFile(textResult.logPath, 'utf8'));
-  check(textResult.ok && textResult.mode === 'text' && textResult.output === 'FAKE OK' &&
+  check(textResult.ok && textResult.mode === 'text' && textResult.verify === 'none' && textResult.output === 'FAKE OK' &&
     textResult.controls === success.controls && textResult.securityMode === success.securityMode, 'text result and inherited controls');
   check(!/desktop|\.codex-cu|screenshot|computer-use|browser/i.test(textPrompt), 'text prompt has no desktop or screenshot instructions');
   for (const phrase of ['one-shot', 'Never ask', 'brief conclusion', 'same language', 'say ok']) {
@@ -231,6 +275,37 @@ ${jsBody}
     throw new Error('unexpected directory: ' + target);
   };
   await checkAbsent(join(textCwd, '.codex-cu'));
+  for (const verify of ['strict', 'final', 'none']) {
+    const ignored = await execute({ mode: 'text', verify, cwd: textCwd });
+    check(ignored.ok && ignored.verify === 'none' &&
+      promptFromLog(await readFile(ignored.logPath, 'utf8')) === textPrompt, 'text ignores verify: ' + verify);
+  }
+  await checkAbsent(join(textCwd, '.codex-cu'));
+  check(!argvFromLog(await readFile(textResult.logPath, 'utf8')).includes('--ephemeral'), 'text default argv omits --ephemeral');
+  for (const mode of ['desktop', 'text']) {
+    for (const ephemeral of [true, false]) {
+      const ephemeralResult = await execute({ mode, ephemeral, cwd: mode === 'text' ? textCwd : fixture });
+      const contents = await readFile(ephemeralResult.logPath, 'utf8');
+      check(ephemeralResult.ok && argvFromLog(contents).filter(arg => arg === '--ephemeral').length === Number(ephemeral),
+        mode + ' ephemeral flag: ' + ephemeral);
+      check(promptFromLog(contents) === (mode === 'text' ? textPrompt : promptFromLog(log)),
+        mode + ' ephemeral preserves prompt: ' + ephemeral);
+    }
+  }
+  for (const mode of ['desktop', 'text']) {
+    for (const [key, values] of Object.entries({
+      verify: ['invalid', '', 'Strict', null, true, false, 0, 1, {}, { toString: null }, [], ['strict']],
+      ephemeral: ['true', 'false', '', null, 0, 1, {}, { toString: null }, [], [true]],
+    })) {
+      for (const value of values) {
+        const invalid = await execute({ mode, [key]: value, cwd: textCwd });
+        check(invalid.ok === false && invalid.exitCode === -1 && !invalid.logPath && invalid.output.includes('Invalid ' + key),
+          mode + ' invalid ' + key + ' returns failure: ' + JSON.stringify(value));
+      }
+    }
+  }
+  await checkAbsent(join(textCwd, '.codex-cu'));
+  console.log('OK: text ignores verify, ephemeral argv opt-in, invalid verify/ephemeral return ok:false');
   apply(ctx, { codexBin: fake, screenshotDir: 'unused-shots', securityMode: 'workspace-write' });
   const textConfigured = await execute({ mode: 'text', cwd: textCwd, model: 'call-model' });
   check(textConfigured.ok && textConfigured.controls === 'model=call-model' &&
@@ -696,7 +771,13 @@ setInterval(() => {}, 1000);
   check(patch.includes("name: 'dsh-tool-codex-computer-use'") && !patch.includes('@local/'), 'published bundle target');
   for (const file of ['README.md', 'README.zh.md', 'docs/DETAIL.md']) {
     const doc = await readFile(new URL(file, root), 'utf8');
-    check(doc.includes('47537') && doc.includes('calculator-7x8-56.png') && doc.includes('workspace-write'), 'documented evidence and security: ' + file);
+    check(doc.includes('workspace-write'), 'documented security: ' + file);
+    // READMEs link to the detailed guide that holds the historical evidence.
+    if (file === 'docs/DETAIL.md') {
+      check(doc.includes('47537') && doc.includes('calculator-7x8-56.png'), 'documented real evidence: ' + file);
+    } else {
+      check(doc.includes('](docs/DETAIL.md)'), 'linked evidence guide: ' + file);
+    }
   }
   console.log('OK: public metadata, packaged files, bundle target, documented real evidence');
   for (const lang of ['en', 'zh']) {
