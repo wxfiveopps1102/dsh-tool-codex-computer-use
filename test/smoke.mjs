@@ -25,8 +25,10 @@ for (const key of ['DSH_CODEX_BIN', 'DSH_PROFILE_DIR', 'DSH_CODEX_SECURITY_MODE'
 try {
   // The plugin imports no Host package: it builds the registry definition itself,
   // so it loads straight from the workspace, before and after installation.
-  const { apply, name, inject } = await import(new URL('index.js', root));
+  const { apply, name, inject, platformLabel } = await import(new URL('index.js', root));
   check(name === 'tool-computer-use-codex' && inject[0] === 'tools', 'exports');
+  const platforms = [['darwin', 'macOS'], ['win32', 'Windows'], ['linux', 'Linux']];
+  for (const [platform, label] of platforms) check(platformLabel(platform) === label, 'platform label: ' + platform);
   let captured, statusTool;
   const ctx = { tools: { register(def) {
     if (def.name === 'computer_use_codex_status') statusTool = def;
@@ -34,6 +36,7 @@ try {
   } } };
   apply(ctx, {});
   check(captured.name === 'computer_use_codex', 'name');
+  check(captured.description.includes('local desktop task') && !captured.description.includes('macOS'), 'platform-neutral tool description');
   check(captured.parameters.properties.task.type === 'string' && captured.parameters.required.includes('task'), 'required task');
   check(captured.parameters.additionalProperties === false && captured.output.schema.additionalProperties === false, 'closed schemas');
   check(captured.parameters.properties.mode.type === 'string' &&
@@ -103,6 +106,7 @@ try {
   await access(join(fixture, '.codex-cu'));
   check(success.mode === 'desktop', 'default desktop mode');
   const promptFromLog = contents => contents.split('\n-o\n')[1].split('\n').slice(1).join('\n');
+  check(promptFromLog(log).startsWith(`Operate the local ${platformLabel(process.platform)} desktop fully automatically.`), 'native desktop platform prompt');
   await rm(join(fixture, '.codex-cu'), { recursive: true });
   const desktop = await execute({ mode: 'desktop' });
   check(desktop.ok && desktop.mode === 'desktop' &&
@@ -118,6 +122,8 @@ try {
   for (const phrase of ['one-shot', 'Never ask', 'brief conclusion', 'same language', 'say ok']) {
     check(textPrompt.includes(phrase), 'text prompt: ' + phrase);
   }
+  check(textPrompt === 'Complete this one-shot task. Never ask the user questions.\n' +
+    'Finish with a brief conclusion in the same language as the task.\n\nsay ok\n', 'text prompt unchanged');
   const checkAbsent = async target => {
     try { await access(target); }
     catch (error) { if (error.code === 'ENOENT') return; throw error; }
@@ -136,6 +142,33 @@ try {
   }
   await checkAbsent(join(textCwd, '.codex-cu'));
   console.log('OK: default/explicit desktop, text prompt, no text screenshot directories, invalid modes');
+  // Capture each platform's prompt with the fake CLI on this host. Restore the
+  // real platform before execution; this does not validate Windows desktop use.
+  const platformBin = join(fixture, 'platform-codex');
+  await copyFile(fake, platformBin);
+  await chmod(platformBin, 0o700);
+  const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+  for (const [platform, label] of platforms) {
+    const entry = new URL('index.js', root);
+    entry.searchParams.set('smokePlatform', platform);
+    let platformModule;
+    try {
+      Object.defineProperty(process, 'platform', { value: platform });
+      platformModule = await import(entry);
+    } finally {
+      Object.defineProperty(process, 'platform', platformDescriptor);
+    }
+    platformModule.apply(ctx, { codexBin: platformBin });
+    const desktopResult = await execute({ mode: 'desktop' });
+    check(desktopResult.ok, 'simulated platform desktop result: ' + platform);
+    const desktopPrompt = promptFromLog(await readFile(desktopResult.logPath, 'utf8'));
+    check(desktopPrompt.includes('desktop') && desktopPrompt.startsWith(`Operate the local ${label} desktop`), 'simulated platform desktop prompt: ' + platform);
+    if (platform !== 'darwin') check(!desktopPrompt.includes('macOS'), 'no hard-coded macOS in desktop prompt: ' + platform);
+    const platformText = await execute({ mode: 'text', cwd: textCwd });
+    check(platformText.ok && promptFromLog(await readFile(platformText.logPath, 'utf8')) === textPrompt, 'platform-independent text prompt: ' + platform);
+  }
+  apply(ctx, { codexBin: fake });
+  console.log('OK: platform labels and simulated macOS/Windows/Linux prompts via fake CLI');
   check(!success.output.includes('--skip'), 'log separation');
   const tuned = await captured.execute({ task: 'say ok', cwd: fixture, model: 'gpt-6.1-sol', reasoningEffort: 'high', serviceTier: 'default' }, {});
   logs.push(dirname(tuned.logPath));

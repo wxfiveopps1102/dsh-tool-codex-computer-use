@@ -4,6 +4,10 @@
 
 本包是委派一次性桌面或文本任务、提供环境体检的 Host 工具插件，不提供 subagent provider。
 
+## 支持平台
+
+`mode=text` 支持 macOS、Windows、Linux，前提是本机可运行 Codex CLI。`mode=desktop` 已在 macOS 验证；Windows 桌面操作尚未实测，需自行确认 Windows 环境中 computer-use 插件的可用性；不保证 Linux 桌面支持。
+
 ## 注册
 
 `name` 为 `tool-computer-use-codex`，`inject` 为 `['tools']`；`apply(ctx, config)` 经 `ctx.tools.register` 依次注册 `computer_use_codex_status` 和 `computer_use_codex`，有 `ctx.effect` 时由其托管，释放时注销两个工具。bundle 经 `cordis.patch.yml` 插入插件；运行时加载状态未在代码中确认。
@@ -15,7 +19,9 @@
 - `desktop`（默认）：创建截图目录，附加桌面操作、截图验证及 `.jpg` 保存指令。
 - `text`：不创建截图目录，不附加桌面或截图指令，用于纯文本委派；不禁用 Codex 插件，不改变安全参数。
 
-两条分支共用临时日志、覆盖参数、超时及输出处理。入口依次取配置、环境变量、PATH、profile；显式入口无效不回退。版本探测按路径缓存，失败仅告警。argv 含工作目录、安全参数、模型覆盖及最终消息路径。非 Windows 使用 detached，超时向进程组发送 SIGKILL；Windows 终止子进程。stdout/stderr 写日志，最终消息读取后删除。
+两条分支共用临时日志、覆盖参数、超时及输出处理。入口依次取配置、环境变量、PATH、profile；显式入口无效不回退。版本探测按路径缓存，失败仅告警。argv 含工作目录、安全参数、模型覆盖及最终消息路径。`desktop` 提示词读取模块级 `PLATFORM = process.platform`，通过 `platformLabel(p)` 将 `darwin`、`win32`、`linux` 分别映射为 `macOS`、`Windows`、`Linux`；`text` 提示词保持原样。stdout/stderr 写日志，最终消息读取后删除。
+
+任务子进程在 Windows 上使用 `detached: false`，其他平台使用 `detached: true`。任务超时时，Windows 通过 spawn 执行 `taskkill /pid PID /T /F` 终止进程树，失败则回退 `child.kill()`；其他平台以子进程的负 PID 向进程组发送 SIGKILL，失败则回退 `child.kill('SIGKILL')`。目标树或组之外的后代可能继续运行，已发生的桌面修改无法撤销。
 
 体检调用：`computer_use_codex_status`（无参数，调用传 `{}`）→ `resolveCodexBin` → `inspectEnvironment` → `onlineCheckEnabled` → 按入口路径和在线检查开关查五分钟缓存；未命中则依次读取模型目录、`codex doctor --json`、本地 `$CODEX_HOME/auth.json` 的 JWT 声明 → `withUpdate` 复制来源结果 → `checkCodexUpdate`（使用 doctor 返回的本地版本）→ 补入 `latestCodexVersion`、`upToDate` 及升级 warning → 返回环境 JSON。命中五分钟缓存也经过 `withUpdate`，不会跳过版本比对。默认认证路径为 `~/.codex/auth.json`。每条来源单独捕获失败并追加 warning，保留其他来源结果；每次 CLI 子命令调用限时 15 秒。缓存保存结果 Promise，共享进行中的请求，返回时复制结果。该调用不执行任务、不创建截图目录。
 

@@ -1,16 +1,22 @@
 # dsh-tool-codex-computer-use
 
-将一次性 macOS 桌面或文本任务交给本机 Codex CLI 的 DSH Host 工具，另提供环境体检工具，不是 subagent provider。[English](../README.md)。
+将一次性桌面或文本任务交给本机 Codex CLI 的 DSH Host 工具，另提供环境体检工具，不是 subagent provider。[English](../README.md)。
 
-通过 DSH profile 的 npm/包安装流程安装本包并加载 `cordis.patch.yml`。要求 Node >=20，无运行时依赖；正常 profile 安装本轮未验证。预先登录 Codex；桌面任务另需启用 computer-use/browser 插件，向相关 Codex/宿主应用授予 macOS **辅助功能、屏幕录制**权限。
+通过 DSH profile 的 npm/包安装流程安装本包并加载 `cordis.patch.yml`。要求 Node >=20，无运行时依赖；正常 profile 安装本轮未验证。预先登录 Codex；桌面任务另需启用 computer-use/browser 插件；在 macOS 上须向相关 Codex/宿主应用授予**辅助功能、屏幕录制**权限。
 
 调用 `computer_use_codex`：`{"task":"计算 7×8 并截图验证","cwd":"/path/to/workspace","timeoutSeconds":600}`。工作目录须存在；每次独立调用，**不可追问、不可续接会话**。
+
+## 支持平台
+
+`mode=text` 支持 macOS、Windows、Linux，前提是本机可运行 Codex CLI。`mode=desktop` 已在 macOS 验证；Windows 桌面操作尚未实测，需自行确认 Windows 环境中 computer-use 插件的可用性；不保证 Linux 桌面支持。
 
 ## 执行模式
 
 调用参数 `mode` 仅接受 `desktop`（默认）或 `text`，返回结果也含 `mode`。`desktop` 创建截图目录并附加桌面操作、截图验证指令；`text` 用于不操作桌面的纯文本任务，不创建截图目录、不附加桌面或截图指令。例如：`{"task":"用一句话解释 7×8 的含义","mode":"text"}`。
 
 `mode` 没有 config 或环境变量默认值，与 `securityMode` 独立。两种模式共用入口解析、版本探测、覆盖参数、日志、超时及输出处理；文本模式不禁用 Codex 插件，也不构成桌面权限隔离。完整调用参数表见 [中文 README](../README.zh.md#调用参数)。
+
+`desktop` 提示词读取模块级 `PLATFORM = process.platform`，通过 `platformLabel(p)` 将 `darwin`、`win32`、`linux` 分别映射为 `macOS`、`Windows`、`Linux`；`text` 提示词保持原样。任务子进程在 Windows 上使用 `detached: false`，其他平台使用 `detached: true`。
 
 ## 选择模型 / 推理档位 / 服务层
 
@@ -79,7 +85,7 @@ model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(conf
 
 已核实的历史实测（任务提供，本轮未重跑）：`{"ok":true,"exitCode":0,"durationMs":47537,...}`。截图 `<workspace>/.codex-cu/calculator-7x8-56.png` 证明计算器 `7×8=56`；历史 `.png` 实为 JPEG，本次未改名，后续提示要求 `.jpg`。证据不随 npm 包分发。
 
-超时 SIGKILL 终止子进程及 POSIX 进程组；脱离组的后代与已发生的桌面修改无法撤销。暂不接入 `execute` 的 `exec` 取消信号：Host 契约未确认，先保留已验证的有界超时，取消集成为后续项。
+任务超时时，Windows 通过 spawn 执行 `taskkill /pid PID /T /F` 终止进程树，失败则回退 `child.kill()`；其他平台以子进程的负 PID 向进程组发送 SIGKILL，失败则回退 `child.kill('SIGKILL')`。目标树或组之外的后代可能继续运行，已发生的桌面修改无法撤销。暂不接入 `execute` 的 `exec` 取消信号：Host 契约未确认，先保留已验证的有界超时，取消集成为后续项。
 
 ## 自测与发布
 
@@ -89,7 +95,7 @@ model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(conf
 ELECTRON_RUN_AS_NODE=1 "/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" test/smoke.mjs
 ```
 
-仅运行假 CLI，包括真实 30 秒 SIGKILL 超时，不操作桌面。未验证真实保守模式 GUI、profile 安装、npm 发布。
+仅运行假 CLI，包括真实 30 秒任务超时，不操作桌面。未验证真实保守模式 GUI、profile 安装、npm 发布。
 
 同意独立 unscoped npm 包与仓库 `dsh-plugin` topic：Host 工具与文本委派 provider 职责不同，不向现有 provider 强塞桌面能力；维护、安全审查由发布者承担。
 

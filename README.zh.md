@@ -1,20 +1,25 @@
 # dsh-tool-codex-computer-use
 
-将一次性 macOS 桌面或文本任务交给本机 Codex CLI 的 DSH Host 工具，不是 subagent provider。[English](README.md)。
+将一次性桌面或文本任务交给本机 Codex CLI 的 DSH Host 工具，不是 subagent provider。[English](README.md)。
 
 ![亚马逊收纳用品排行榜](docs/assets/amazon-ranking.jpg)
 
 ## 定位与取舍
 
-这个工具在 DSH 内把一次性任务交给本机 Codex CLI，支持 `mode=desktop`（操作 macOS 桌面）与 `mode=text`（纯文本委派）。它不是 Codex 的替代品，也不做多轮对话。
+这个工具在 DSH 内把一次性任务交给本机 Codex CLI，支持 `mode=desktop`（桌面操作）与 `mode=text`（纯文本委派）。它不是 Codex 的替代品，也不做多轮对话。
 
 每次调用都会新起一个 `codex exec` 进程，比直接在 Codex 应用内使用多约 3–5 秒启动开销。单步任务中，这部分约占总耗时的 6%，多步任务占比更小；这些是近似参考值，不是固定耗时。
 
 换来的是在 DSH 内编排任务、指定模型／推理档位／服务层，以及无人值守连续执行的能力。不适合需要连续追问、复用 Codex 内已有上下文，或对每次多几秒敏感的场景。无人值守执行仍需考虑下文「配置与风险」中的默认 `bypass` 风险。
 
-通过 DSH profile 的 npm/包安装流程安装本包并加载 `cordis.patch.yml`。要求 Node >=20，无运行时依赖；正常 profile 安装本轮未验证。预先登录 Codex；桌面任务另需启用 computer-use/browser 插件，向相关 Codex/宿主应用授予 macOS **辅助功能、屏幕录制**权限。
+通过 DSH profile 的 npm/包安装流程安装本包并加载 `cordis.patch.yml`。要求 Node >=20，无运行时依赖；正常 profile 安装本轮未验证。预先登录 Codex；桌面任务另需启用 computer-use/browser 插件；在 macOS 上须向相关 Codex/宿主应用授予**辅助功能、屏幕录制**权限。
 
 调用 `computer_use_codex`：`{"task":"计算 7×8 并截图验证","cwd":"/path/to/workspace","timeoutSeconds":600}`。工作目录须存在；每次独立调用，**不可追问、不可续接会话**。
+
+## 支持平台
+
+- `mode=text`：支持 macOS、Windows、Linux，前提是本机可运行 Codex CLI。
+- `mode=desktop`：已在 macOS 验证。Windows 桌面操作尚未实测，需自行确认 Windows 环境中 computer-use 插件的可用性；不保证 Linux 桌面支持。
 
 ## 与 DSH 自带 subagent_codex 的关系
 
@@ -126,7 +131,7 @@ model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(conf
 
 更多安全说明与限制见[详细文档](docs/DETAIL.md)。
 
-超时 SIGKILL 终止子进程及 POSIX 进程组；脱离组的后代与已发生的桌面修改无法撤销。暂不接入 `execute` 的 `exec` 取消信号：Host 契约未确认，先保留已验证的有界超时，取消集成为后续项。
+任务超时时，Windows 通过 spawn 执行 `taskkill /pid PID /T /F` 终止进程树，失败则回退 `child.kill()`；其他平台以子进程的负 PID 向进程组发送 SIGKILL，失败则回退 `child.kill('SIGKILL')`。目标树或组之外的后代可能继续运行，已发生的桌面修改无法撤销。暂不接入 `execute` 的 `exec` 取消信号：Host 契约未确认，先保留已验证的有界超时，取消集成为后续项。
 
 ## 自测与发布
 
@@ -136,7 +141,7 @@ model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(conf
 ELECTRON_RUN_AS_NODE=1 "/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" test/smoke.mjs
 ```
 
-仅运行假 CLI，包括真实 30 秒 SIGKILL 超时，不操作桌面。未验证真实保守模式 GUI、profile 安装、npm 发布。
+仅运行假 CLI，包括真实 30 秒任务超时，不操作桌面。未验证真实保守模式 GUI、profile 安装、npm 发布。
 
 同意独立 unscoped npm 包与仓库 `dsh-plugin` topic：Host 工具与文本委派 provider 职责不同，不向现有 provider 强塞桌面能力；维护、安全审查由发布者承担。
 

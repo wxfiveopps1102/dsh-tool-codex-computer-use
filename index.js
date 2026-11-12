@@ -4,6 +4,9 @@ import { homedir, tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { constants } from 'node:fs';
 
+const PLATFORM = process.platform;
+export function platformLabel(p) { return p === 'darwin' ? 'macOS' : p === 'win32' ? 'Windows' : 'Linux'; }
+
 export const name = 'tool-computer-use-codex';
 export const inject = ['tools'];
 // No Host runtime dependencies: configuration is accepted by apply() or env.
@@ -309,7 +312,7 @@ async function run(args, config) {
     log = await open(join(temp, 'process.log'), 'wx', 0o600);
     logPath = join(temp, 'process.log');
     const prompt = (mode === 'desktop' ? [
-      'Operate the local macOS desktop fully automatically. Never ask the user questions.',
+      `Operate the local ${platformLabel(PLATFORM)} desktop fully automatically. Never ask the user questions.`,
       'Prefer your computer-use / browser plugins. Verify every operation with a screenshot.',
       `Save screenshots as .jpg files in ${JSON.stringify(screenshots)}; create that directory if needed.`,
       'Finish with a brief conclusion in the same language as the task: what you did, the result, and screenshot paths.',
@@ -336,10 +339,19 @@ async function run(args, config) {
       let spawnError;
       const timer = setTimeout(() => {
         timedOut = true;
-        try {
-          if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
-          else child.kill('SIGKILL');
-        } catch { child.kill('SIGKILL'); }
+        if (PLATFORM === 'win32') {
+          const fallback = () => child.kill();
+          try {
+            const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+            killer.once('error', fallback);
+            killer.once('exit', code => { if (code !== 0) fallback(); });
+          } catch { fallback(); }
+        } else {
+          try {
+            if (child.pid) process.kill(-child.pid, 'SIGKILL');
+            else child.kill('SIGKILL');
+          } catch { child.kill('SIGKILL'); }
+        }
       }, seconds * 1000);
       child.once('error', error => { spawnError = error; });
       child.once('close', (code, signal) => {
@@ -349,7 +361,9 @@ async function run(args, config) {
     });
     await log.close();
     log = undefined;
-    if (status.timedOut) return result(false, -1, `Codex timed out after ${seconds} seconds (超时); terminated with SIGKILL.`);
+    if (status.timedOut) return result(false, -1, `Codex timed out after ${seconds} seconds (超时); ${PLATFORM === 'win32'
+      ? 'process-tree termination requested via taskkill /T /F (child.kill() fallback).'
+      : 'terminated with SIGKILL.'}`);
     if (status.spawnError) return result(false, -1, `Cannot start Codex: ${status.spawnError.message}`);
     let output;
     try { output = await readFile(lastMessage, 'utf8'); }
@@ -376,7 +390,7 @@ async function run(args, config) {
 export function apply(ctx, config = {}) {
   const tool = {
     name: 'computer_use_codex',
-    description: 'Delegate a one-shot macOS desktop task to Codex and return its brief conclusion and screenshot paths. With mode=text, delegate a pure text task without operating the desktop. Runs autonomously without follow-up questions. Model, reasoning effort and service tier default to the local Codex configuration and can be overridden per call.',
+    description: 'Delegate a one-shot local desktop task to Codex and return its brief conclusion and screenshot paths. With mode=text, delegate a pure text task without operating the desktop. Runs autonomously without follow-up questions. Model, reasoning effort and service tier default to the local Codex configuration and can be overridden per call.',
     timeoutMs: 3610000,
     parameters: {
       type: 'object',

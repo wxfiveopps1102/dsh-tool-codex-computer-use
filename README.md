@@ -1,20 +1,25 @@
 # dsh-tool-codex-computer-use
 
-A DSH Host tool for one-shot macOS desktop or text tasks via a local Codex CLI, not a subagent provider. [中文](README.zh.md).
+A DSH Host tool for one-shot desktop or text tasks via a local Codex CLI, not a subagent provider. [中文](README.zh.md).
 
 ![Amazon 収納用品 ranking](docs/assets/amazon-ranking.jpg)
 
 ## Purpose and trade-offs
 
-This tool delegates one-shot tasks from DSH to the local Codex CLI. It supports `mode=desktop` for operating the macOS desktop and `mode=text` for text-only delegation. It is not a replacement for Codex and does not support multi-turn conversations.
+This tool delegates one-shot tasks from DSH to the local Codex CLI. It supports `mode=desktop` for desktop operations and `mode=text` for text-only delegation. It is not a replacement for Codex and does not support multi-turn conversations.
 
 Each call starts a new `codex exec` process, adding roughly 3–5 seconds of startup overhead compared with working directly in the Codex app. That overhead accounts for about 6% of a single-step task and a smaller share of multi-step tasks; these are approximate figures, not fixed timings.
 
 In return, tasks can be orchestrated within DSH, with a choice of model, reasoning effort and service tier, and run consecutively without supervision. The tool is a poor fit for work that needs ongoing follow-up questions, reuse of context already in Codex, or minimal delay on every call. Unattended execution still carries the risks described under Configuration, including the default `bypass` mode.
 
-Install this package through your DSH profile's npm/package installation flow and load its `cordis.patch.yml` bundle patch. Requires Node >=20 and a signed-in Codex CLI. Desktop tasks additionally require computer-use/browser plugins and macOS Accessibility and Screen Recording permissions for the relevant Codex/host application. Normal profile installation remains unverified.
+Install this package through your DSH profile's npm/package installation flow and load its `cordis.patch.yml` bundle patch. Requires Node >=20 and a signed-in Codex CLI. Desktop tasks additionally require computer-use/browser plugins; on macOS, grant Accessibility and Screen Recording permissions to the relevant Codex/host application. Normal profile installation remains unverified.
 
 Call `computer_use_codex` with `{"task":"Calculate 7×8 and verify by screenshot","cwd":"/path/to/workspace","timeoutSeconds":600}`. The working directory must exist. Each invocation is independent: no follow-up questions or session continuation.
+
+## Supported platforms
+
+- `mode=text`: supported on macOS, Windows and Linux, provided Codex CLI can run on the host.
+- `mode=desktop`: verified on macOS. Windows desktop operation has not been tested; confirm computer-use plugin availability in your Windows environment. Linux desktop support is not guaranteed.
 
 ## Relationship with DSH's built-in subagent_codex
 
@@ -124,7 +129,7 @@ Previously verified real run, supplied as evidence and not repeated here: `{"ok"
 
 See the [detailed safety and limitations guide (Chinese)](docs/DETAIL.md) for more information.
 
-Timeout sends SIGKILL to the child and POSIX process group. Detached descendants and prior GUI effects cannot be undone. Host cancellation through `execute`'s `exec` argument is not implemented because the signal contract is unverified; bounded timeout remains in place.
+On task timeout, Windows spawns `taskkill /pid PID /T /F` to terminate the process tree, falling back to `child.kill()` if that fails. Other platforms send SIGKILL to the process group via the negative child PID, falling back to `child.kill('SIGKILL')`. Descendants outside the targeted tree or group may remain, and prior GUI effects cannot be undone. Host cancellation through `execute`'s `exec` argument is not implemented because the signal contract is unverified; bounded timeout remains in place.
 
 ## Validation and publication
 
@@ -134,6 +139,6 @@ From this package directory:
 ELECTRON_RUN_AS_NODE=1 "/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" test/smoke.mjs
 ```
 
-Tests use fake CLIs only, including a real 30-second SIGKILL timeout; no desktop operation. Real conservative-mode GUI behavior, profile installation and publication remain unverified.
+Tests use fake CLIs only, including a real 30-second task timeout; no desktop operation. Real conservative-mode GUI behavior, profile installation and publication remain unverified.
 
 The author and MIT copyright holder are `wx5`. Repository metadata uses `https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use`, with `wxfiveopps1102` as the GitHub owner; the repository has not yet been created. Confirm npm name availability and ownership; tag the actual repository `dsh-plugin` for directory submission. The independent unscoped package keeps Host tool semantics separate from subagent providers; maintainers own security review and ongoing maintenance. MIT licensed.
