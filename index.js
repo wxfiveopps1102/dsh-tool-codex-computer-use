@@ -490,10 +490,21 @@ export function apply(ctx, config = {}) {
         },
         required: ['ok', 'exitCode', 'mode', 'codexVersion', 'warnings', 'durationMs', 'output'],
       },
-      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+      render: (_args, value) => [
+        { type: 'text', text: `${value.mode} · ${value.controls} · ${(value.durationMs / 1000).toFixed(1)}s · ${value.ok ? 'ok' : 'failed'}` },
+        { type: 'text', text: JSON.stringify(value, null, 2) },
+      ],
     },
     execute: args => run(args, config),
-    presentCall: args => ({ card: 'generic', title: 'Computer use via Codex', kind: 'other', rawInput: args }),
+    presentCall: args => ({
+      card: 'generic',
+      title: [
+        `Computer use (${args.mode ?? 'desktop'})`,
+        args.model ?? config.model ?? 'Codex default',
+        args.reasoningEffort ?? config.reasoningEffort,
+      ].filter(Boolean).join(' · '),
+      kind: 'other', rawInput: args,
+    }),
   };
   const statusTool = {
     name: 'computer_use_codex_status',

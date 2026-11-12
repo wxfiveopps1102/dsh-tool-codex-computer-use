@@ -93,7 +93,30 @@ try {
   check(captured.output.schema.properties.codexVersion.type === 'string' &&
     captured.output.schema.properties.warnings.type === 'array' && captured.output.schema.properties.warnings.items.type === 'string' &&
     ['codexVersion', 'warnings'].every(key => captured.output.schema.required.includes(key)), 'version output schema');
-  check(captured.presentCall({ task: 'ok' }).title === 'Computer use via Codex', 'title');
+  check(captured.presentCall({}).title === 'Computer use (desktop) · Codex default', 'default title');
+  const callArgs = { mode: 'text', model: 'gpt-6-astra', reasoningEffort: 'low' };
+  const callCard = captured.presentCall(callArgs);
+  check(callCard.title === 'Computer use (text) · gpt-6-astra · low', 'argument title');
+  check(callCard.card === 'generic' && callCard.kind === 'other' && callCard.rawInput === callArgs, 'call card metadata unchanged');
+  let configuredTool;
+  apply({ tools: { register(def) {
+    if (def.name === 'computer_use_codex') configuredTool = def;
+  } } }, { model: 'gpt-6.1-sol', reasoningEffort: 'high' });
+  check(configuredTool.presentCall({}).title === 'Computer use (desktop) · gpt-6.1-sol · high', 'config title');
+  check(configuredTool.presentCall(callArgs).title === callCard.title, 'title arguments override config');
+  check(configuredTool.presentCall({ model: 'gpt-6-astra' }).title === 'Computer use (desktop) · gpt-6-astra · high', 'title retains configured effort');
+  check(configuredTool.presentCall({ reasoningEffort: 'low' }).title === 'Computer use (desktop) · gpt-6.1-sol · low', 'title retains configured model');
+  const fakeValue = {
+    mode: 'desktop', controls: 'model=gpt-6.1-sol(config) reasoningEffort=high(config) serviceTier=priority(config)',
+    durationMs: 52345, ok: true, output: 'FAKE OK',
+  };
+  const rendered = captured.output.render({}, fakeValue);
+  check(rendered.length === 2 && rendered.every(part => part.type === 'text'), 'summary and JSON text parts');
+  check(rendered[0].text === 'desktop · ' + fakeValue.controls + ' · 52.3s · ok', 'render controls, seconds and success');
+  check(rendered[1].text === JSON.stringify(fakeValue, null, 2), 'complete formatted JSON renderer');
+  check(captured.output.render({}, { ...fakeValue, mode: 'text', durationMs: 0, ok: false })[0].text ===
+    'text · ' + fakeValue.controls + ' · 0.0s · failed', 'render mode, zero duration and failure');
+  console.log('OK: call titles, config precedence, summary and complete JSON rendering');
   fixture = await realpath(await mkdtemp(join(tmpdir(), 'dsh-codex-smoke-')));
   process.env.TMPDIR = fixture;
   process.env.TEMP = fixture;
