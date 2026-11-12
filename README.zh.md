@@ -1,60 +1,145 @@
 # dsh-tool-codex-computer-use
 
-将一次性桌面或文本任务交给本机 Codex CLI 的 DSH Host 工具，不是 subagent provider。[English](README.md)。
+[English](README.md) | 简体中文
 
-![亚马逊收纳用品排行榜](docs/assets/amazon-ranking.jpg)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![DSH](https://img.shields.io/badge/DSH-0.2.2-1f6feb.svg)](https://github.com/deepseek-ai/deepseek-harness)
+[![macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey.svg)](#compatibility)
+[![validate](https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use/actions/workflows/validate.yml/badge.svg)](https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use/actions/workflows/validate.yml)
 
-## 相关插件
+在 DeepSeek Harness（DSH）中将一次性桌面或文本任务交给本机 Codex CLI，并按需选择模型、推理档位与服务层。
 
-本插件通过 Codex CLI 执行，每步可验证、速度较慢，跨平台（含 Windows）；[原生插件 dsh-tool-desktop-use](https://github.com/wxfiveopps1102/dsh-tool-desktop-use) 直接调用 macOS API，批量动作毫秒级，仅支持 macOS，适合高频操作。
+![Preview](docs/assets/amazon-ranking.jpg)
 
-## 定位与取舍
+*实拍：computer_use_codex 在亚马逊日本站完成类目检索*
 
-这个工具在 DSH 内把一次性任务交给本机 Codex CLI，支持 `mode=desktop`（桌面操作）与 `mode=text`（纯文本委派）。它不是 Codex 的替代品，也不做多轮对话。
+## 功能
 
-每次调用都会新起一个 `codex exec` 进程，比直接在 Codex 应用内使用多约 3–5 秒启动开销。单步任务中，这部分约占总耗时的 6%，多步任务占比更小；这些是近似参考值，不是固定耗时。
+- **桌面与文本两种模式**：通过 `computer_use_codex` 执行桌面操作或一次性文本任务。
+- **模型控制**：按调用或插件默认值选择模型、推理档位与服务层，结果回显生效的覆盖值及来源。
+- **环境体检**：`computer_use_codex_status` 返回 CLI 与桌面端版本、模型目录、认证元数据及平台信息。
+- **结果可核验**：查看返回文本、截图路径与本地日志；超时后先尝试优雅终止，再强制结束进程。
+- **macOS 与 Windows 实测**：已有 macOS 计算器与 Windows 记事本的真实桌面证据，见[兼容性](#compatibility)。
+- **轻量 Host bundle**：无运行时依赖，通过 `ctx.tools` 注册工具，调用由 `codexBin` 选择的 CLI。
 
-换来的是在 DSH 内编排任务、指定模型／推理档位／服务层，以及无人值守连续执行的能力。不适合需要连续追问、复用 Codex 内已有上下文，或对每次多几秒敏感的场景。无人值守执行仍需考虑下文「配置与风险」中的默认 `bypass` 风险。
+每个任务都会启动新的 `codex exec` 进程，调用之间独立，不可续接会话或追问。既有测量显示启动开销约 3–5 秒，实际耗时随任务变化。DSH 自带的 `subagent_codex` 是承担另一类职责的 subagent provider，可与本插件共存。直接调用 macOS API 的自动化方案见相关插件 [dsh-tool-desktop-use](https://github.com/wxfiveopps1102/dsh-tool-desktop-use)。
 
-通过 DSH profile 的 npm/包安装流程安装本包并加载 `cordis.patch.yml`。要求 Node >=20，无运行时依赖；正常 profile 安装本轮未验证。预先登录 Codex；桌面任务另需启用 computer-use/browser 插件；在 macOS 上须向相关 Codex/宿主应用授予**辅助功能、屏幕录制**权限。
+## 环境要求
 
-调用 `computer_use_codex`：`{"task":"计算 7×8 并截图验证","cwd":"/path/to/workspace","timeoutSeconds":600}`。工作目录须存在；每次独立调用，**不可追问、不可续接会话**。
+- **DSH 0.2.2 系列**；既有端到端验收使用 **0.2.2-rc.2**。
+- **Node.js >=20**；仓库 CI 使用 Node.js 24。
+- 已安装并登录的 **Codex CLI**；既有验收使用 **0.167.2**，插件调用本机安装。
+- 桌面任务需要相应的 computer-use/browser 插件和可用的桌面会话。macOS 上须向相关 Codex/宿主应用授予**辅助功能、屏幕录制**权限。
+- `cwd` 指向已存在的工作目录。已测环境与待验证项见[兼容性](#compatibility)。
 
-## 支持平台
+## 安装
 
-| 平台 | `mode=text` | `mode=desktop` |
-| --- | --- | --- |
-| macOS | 支持 | 已实测：计算器 `7×8=56` |
-| Windows | 已实测 | 已实测：Windows 11 Pro + DSH 0.2.2-rc.2 + Codex CLI 0.167.2；记事本真实输入 `hello`，3 张截图，状态栏「5 个字符」可核验 |
-| Linux | 支持 | 不保证 |
+仓库根目录即为可安装的 DSH bundle，`package.json` 指向 `cordis.patch.yml`。请选择实际使用的 DSH profile；若不是 `desktop`，请替换以下命令中的名称。干净 profile 安装尚未验证，既有验收使用本地链接的 bundle。
 
-文本模式的前提是本机可运行 Codex CLI。Windows 验收记录日期为 **2026-11-12**，由用户提供：DSH Desktop 使用 `desktop` profile，Node v24.14.0、npm 11.9.0，ChatGPT 登录（`planType: prolite`）。四层测试均通过；手动重启 DSH 后两个工具首次调用即成功，无 `must declare output` 告警，`application: applied`、`warnings: []`。插件 SHA 与 commit `e99d5a4` 一致，完整结果见[跨平台验收记录](RELEASE.md#跨平台验收记录)；本轮文档更新未重跑。
+### 从 Git 仓库安装
 
-## 与 DSH 自带 subagent_codex 的关系
+当 `dsh` 已在 PATH 中时：
 
-- 官方 `@deepseek-ai/dsh-subagent-codex` 是 **subagent provider**，注册到 `ctx.subagents`，通过 Codex app-server 运行，内置依赖钉在 `@openai/codex@0.153.4`。
-- 本插件是 **Host 工具**，注册到 `ctx.tools`，直接调用使用者指定的 Codex CLI，入口路径可通过 `codexBin` 配置，因此可使用较新的 CLI 及其可用模型。
-- 两者**互不依赖、可同时安装**。需要子代理树或会话记录时用官方 provider；需要指定模型、指定 CLI，或通过 `mode=text` 进行一次性纯文本委派时用本工具。
+```sh
+dsh plugin --profile desktop add git+https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use.git
+```
 
-已在 Codex CLI 0.167.2 + DSH 0.2.2-rc.2 上验证。此处沿用既有验证记录，本次文档更新未重跑。
+安装后在 DSH **插件**页启用 bundle。替换已安装的版本后，重启 Host 进程以加载新模块。
 
-## 调用参数
+### 从 DSH 插件页安装
+
+打开**插件 → 添加插件**（Plugins → Add plugin），输入以下 Git 安装目标，完成安装并启用 bundle：
+
+```text
+git+https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use.git
+```
+
+仓库：[wxfiveopps1102/dsh-tool-codex-computer-use](https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use)。此方式不要求社区市场收录；市场收录仍在计划中。
+
+### 按 npm 包名安装 — planned（计划中）
+
+**npm 包尚未发布。** 计划包名为 `dsh-tool-codex-computer-use`，以下命令仅供**发布后**使用：
+
+```sh
+dsh plugin --profile desktop add dsh-tool-codex-computer-use
+```
+
+当前请使用 Git 安装方式。npm 发布、包名可用性检查仍待完成，见[发布记录](RELEASE.md)与[发布指南](docs/PUBLISHING.md)。
+
+## 使用
+
+启用插件后，在 DSH 中调用工具。以下 JSON 是工具参数，不是 shell 命令。
+
+### 桌面任务 — `mode=desktop`
+
+调用 `computer_use_codex` 计算数值并请求截图：
+
+```json
+{
+  "task": "打开计算器，计算 7 × 8，并截图核验结果。",
+  "mode": "desktop",
+  "cwd": "/absolute/path/to/workspace",
+  "timeoutSeconds": 600
+}
+```
+
+将 `cwd` 替换为已存在的目录；Windows 可使用 `C:/path/to/workspace`。桌面模式为默认值，截图默认请求以 `.jpg` 保存到 `<cwd>/.codex-cu/`，也可另行配置；提示词不保证截图一定生成。
+
+### 文本任务 — `mode=text`
+
+调用 `computer_use_codex` 完成一次性解释：
+
+```json
+{
+  "task": "用一句话解释 7 × 8 的含义。",
+  "mode": "text",
+  "timeoutSeconds": 600
+}
+```
+
+文本模式省略桌面/截图指令及截图目录创建，保留原安全模式，也不禁用 Codex 插件。`mode` 仅为调用参数，没有对应的 config 或环境变量默认值。
+
+### 调用参数
 
 | 参数 | 含义 / 默认值 |
 | --- | --- |
 | `task` | 必填，非空任务描述。 |
-| `mode` | `desktop`（默认）或 `text`；文本任务不操作桌面、不创建截图目录。 |
+| `mode` | `desktop`（默认）或 `text`。 |
 | `cwd` | 已存在的工作目录；默认 Host 进程当前目录。 |
-| `timeoutSeconds` | 整数 30–3600；继承插件配置或环境变量，初始默认 600。 |
-| `model` | 模型 ID；继承规则见下文。 |
-| `reasoningEffort` | 推理档位；继承规则见下文。 |
-| `serviceTier` | 服务层；继承规则见下文。 |
+| `timeoutSeconds` | 整数 30–3600；调用参数 > config > 环境变量 > `600`。 |
+| `model` | 模型 ID；继承规则见[配置](#配置)。 |
+| `reasoningEffort` | 推理档位；与 `model` 使用相同优先级。 |
+| `serviceTier` | 服务层；与 `model` 使用相同优先级。 |
 
-文本示例：以 `{"task":"用一句话解释 7×8 的含义","mode":"text"}` 调用 `computer_use_codex`。`mode` 仅为调用参数，没有对应的 config 或环境变量默认值。文本模式省略桌面/截图指令及截图目录创建，不改变 `securityMode`，也不禁用 Codex 插件。
+### 环境体检
 
-## 配置与风险
+以 `{}` 调用 `computer_use_codex_status`。它直接返回环境 JSON，不套用任务结果的 `ok`/`output` 包装，不运行桌面任务，也不创建截图目录。
 
-`apply(ctx, config)` 显式配置优先于环境变量；环境变量须传入 Host 进程，仅设置 shell 工具环境可能无效。
+| 字段 | 含义 |
+| --- | --- |
+| `platform`、`platformLabel`、`osVersion` | 平台标识、可读平台名与系统版本。 |
+| `codexVersion` | `codex doctor --json` 返回的 CLI 版本，无法取得时为 `unknown`。 |
+| `latestCodexVersion` | npm 最新版本；关闭检查或查询失败时为 `null`。 |
+| `upToDate` | 本地版本不低于 npm 最新时为 `true`，低于时为 `false`，无法比较时为 `null`。 |
+| `desktopAppVersion`、`authMode` | doctor 返回的桌面端版本与已保存认证方式，无法取得时为 `unknown`。 |
+| `planType` | 本地 JWT 的 `chatgpt_plan_type` 声明，缺失为 `null`。 |
+| `subscriptionActiveUntil` | 本地 JWT 的 `chatgpt_subscription_active_until` 声明，缺失为 `null`；不是实时权益查询。 |
+| `models` | 模型目录对象数组，每项含 `slug`、`displayName`、`efforts` 与 `serviceTiers`；默认 `[]`。 |
+| `warnings` | 数据来源失败、使用离线模型目录或建议升级时的非阻断告警；无告警为 `[]`。 |
+
+数据来自 `codex debug models`、`codex doctor --json` 与 `$CODEX_HOME/auth.json`（默认 `~/.codex/auth.json`）。来源结果在当前进程内按解析后的 CLI 路径及在线检查开关缓存 5 分钟。来源失败仅增加 warning，保留其他结果；CLI 入口解析须先成功。选择模型时结合 `planType` 与 `models` 判断，最终由 Codex 校验。
+
+### 任务返回
+
+`computer_use_codex` 返回 `ok`、`exitCode`、`mode`、`codexVersion`、`warnings`、`durationMs`、`output`、`controls`、`securityMode`、`securityNotice`，日志创建成功时附 `logPath`。**`ok:true` 仅表示 CLI 正常退出，不等于任务目标达成。** 桌面任务结合截图复核，文本任务核对返回文本。
+
+输出最多 8000 个 JavaScript 字符。两种模式的完整日志均保存在私有系统临时目录，最终消息文件自动删除。保存与权限边界见[安全](#安全)，完整输出契约见[架构说明](docs/ARCHITECTURE.md)。
+
+## 配置
+
+`model`、`reasoningEffort`、`serviceTier` 各自独立按以下顺序解析：**调用参数 > 插件 config > 环境变量 > Codex 本地配置**（`~/.codex/config.toml`）。仅省略调用参数，仍会使用 config 或环境变量默认值。`timeoutSeconds` 使用相同的前三层优先级，最后回退到 `600`。
+
+其他设置以 `apply(ctx, config)` 显式值优先于环境变量默认值。环境变量须传入 Host 进程，仅设置 shell 工具环境可能无效。在线检查开关是例外：任一关闭条件均生效，详见下文。
 
 | 配置 | 环境变量 | 默认值 |
 | --- | --- | --- |
@@ -66,14 +151,13 @@
 | `model` | `DSH_CODEX_MODEL` | 继承 Codex 本地配置 |
 | `reasoningEffort` | `DSH_CODEX_REASONING_EFFORT` | 继承 Codex 本地配置 |
 | `serviceTier` | `DSH_CODEX_SERVICE_TIER` | 继承 Codex 本地配置 |
+| `onlineCheck` | `DSH_CODEX_OFFLINE` | 默认开启；config 为 `false` 或环境变量为 `1` 时关闭体检的在线检查 |
 
-入口顺序为配置 → 环境变量 → PATH → profile 推导。显式入口必须为文件路径；无效时直接返回可读 `ok:false`，不偷偷回退。`.js` 入口用 `DSH_NODE_EXECUTABLE` 或当前运行时执行，并设置 `ELECTRON_RUN_AS_NODE=1`。相对截图目录基于 `cwd`。
+CLI 入口顺序为**配置 → 环境变量 → PATH → profile**。显式入口必须是文件路径，不能是 shell 命令；无效时直接失败，不回退其他入口。任务调用会将入口解析失败报告为可读的 `ok:false` 结果。`.js` 入口使用 `DSH_NODE_EXECUTABLE` 或当前运行时，并设置 `ELECTRON_RUN_AS_NODE=1`。相对截图目录基于 `cwd`。
 
-`bypass` 使用 `--dangerously-bypass-approvals-and-sandbox`，关闭审批和 CLI 沙箱，可直接操作本机桌面及文件；为兼容现有 GUI 行为保留为默认。`workspace-write` 改传 `--sandbox workspace-write`，不传 bypass，GUI 操作可能失败。输出 `securityMode`、`securityNotice` 说明请求模式与风险；文件沙箱不保证约束外部 GUI 插件，也不能撤销桌面操作。
+不导出 schemastery `Config`，也不承诺自动配置界面：workspace 链接导入已失败，profile 解析尚未确认，插件无运行时依赖。
 
-保留环境变量，不导出 schemastery `Config`：workspace 链接导入已失败，profile 安装解析未确认，本次不新增运行时依赖；不承诺自动配置界面。
-
-### 模型 × 推理档位矩阵（实时目录，2026-11-12）
+### 模型 × 推理档位矩阵（快照，2026-11-12）
 
 以下为用户提供的 2026-11-12 实时目录快照，本次文档更新未重新拉取。
 
@@ -92,9 +176,7 @@
 
 `ultra` = `max` 推理 + 自动任务委派，会产生额外子任务与 token 成本。推理档位由 Codex 侧校验，非法值会返回 HTTP 400。实际可用性随套餐与 CLI 版本变化，以 `computer_use_codex_status` 返回的 `models[].efforts` 为准。
 
-## 选择模型 / 推理档位 / 服务层
-
-`computer_use_codex` 支持调用参数 `model`、`reasoningEffort`、`serviceTier`；也可通过 `config.model`、`config.reasoningEffort`、`config.serviceTier` 设置插件默认值，或使用上表的环境变量。每个字段独立按三级覆盖优先级解析：**调用参数 > config > 环境变量**；三级均未设置时，继承 Codex 本地配置（`~/.codex/config.toml`）。仅省略调用参数，仍会使用 config 或环境变量中的默认值。
+### 模型与服务层默认值
 
 `cordis.patch.yml` 中的插件配置示例：
 
@@ -108,9 +190,9 @@
         serviceTier: priority
 ```
 
-模型与推理档位参见上面的矩阵。调用 `computer_use_codex_status` 获取当前目录，结合 `planType` 判断套餐下的可用模型。Fast 服务层 ID 为 `priority`，选择前应查看对应模型返回的 `serviceTiers`。
+Fast 服务层 ID 为 `priority`，选择前应检查对应模型返回的 `serviceTiers`。也可通过 `DSH_CODEX_MODEL`、`DSH_CODEX_REASONING_EFFORT`、`DSH_CODEX_SERVICE_TIER` 设置默认值。
 
-返回的 `controls` 是以空格分隔的字符串，回显生效的覆盖值及其来源。使用上面的配置且无调用参数覆盖时为：
+返回的 `controls` 字符串以空格分隔，回显生效的覆盖值及来源。使用上面的配置且无调用参数覆盖时为：
 
 ```text
 model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(config)
@@ -118,78 +200,136 @@ model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(conf
 
 `reasoningEffort=high(config)` 表示来自插件配置；`reasoningEffort=low(environment)` 表示来自环境变量；无后缀的 `reasoningEffort=low` 表示来自调用参数。未列出的字段继承 Codex 本地配置；三个字段均无覆盖时，整个字符串为 `inherited from Codex config`，不会展开继承到的具体值。
 
-## 环境体检
+### 在线检查与缓存
 
-体检返回平台与系统版本，便于排查。
+在线检查默认开启。插件查询 `https://registry.npmjs.org/@openai/codex/latest`，成功和失败结果均在当前进程内缓存 6 小时，由任务与体检工具共享。每次体检返回时，将版本比对结果补入来源缓存结果的副本。
 
-以 `{}` 调用 `computer_use_codex_status`（无参数），直接返回环境 JSON，不套用任务结果的 `ok`/`output` 包装：
+设置 `onlineCheck: false` 或 `DSH_CODEX_OFFLINE=1` 可关闭这些在线检查，此时 `latestCodexVersion`、`upToDate` 均为 `null`。模型目录通常通过 `codex debug models` 在线刷新，失败时回退 `codex debug models --bundled` 并告警；关闭在线检查后直接使用 `--bundled`，并提示使用离线目录。这些开关控制体检，不限制委派任务自身联网。
 
-| 字段 | 含义 |
-| --- | --- |
-| `codexVersion` | `codex doctor --json` 返回的 CLI 版本，无法取得时为 `unknown`。 |
-| `latestCodexVersion` | `string` 或 `null`：npm 最新版本；关闭在线检查或查询失败时为 `null`。 |
-| `upToDate` | `boolean` 或 `null`：本地版本不低于 npm 最新时为 `true`，低于时为 `false`，无法比较时为 `null`。 |
-| `desktopAppVersion` | doctor 返回的桌面应用版本，无法取得时为 `unknown`。 |
-| `authMode` | doctor 返回的已保存认证方式，无法取得时为 `unknown`。 |
-| `planType` | 本地 JWT 的 `chatgpt_plan_type` 声明，缺失为 `null`；辅助判断套餐下的模型可用性。 |
-| `subscriptionActiveUntil` | 本地 JWT 的 `chatgpt_subscription_active_until` 声明，缺失为 `null`。 |
-| `models` | 来自 `codex debug models` 的对象数组，每项含 `slug`、`displayName`、`efforts`（推理档位）、`serviceTiers`（服务层 ID）；默认 `[]`。 |
-| `warnings` | 数据来源失败、使用离线模型目录或建议升级时的非阻断告警；无告警为 `[]`。 |
+## 工作原理
 
-第三条来源为 `$CODEX_HOME/auth.json`（默认 `~/.codex/auth.json`）。插件仅在本地解码所需 JWT 声明，不输出或外发 token。套餐信息是本地声明快照，不是实时权益查询；`planType` 需结合 `models` 使用，最终模型选择仍由 Codex 校验。
-
-三条来源的结果在当前进程内按解析后的 CLI 路径及在线检查开关缓存 5 分钟。来源失败仅增加 warning，保留其他来源的结果；CLI 入口解析须先成功，入口错误不属于上述来源告警。此工具不执行桌面任务，也不创建截图目录。
-
-在线检查默认开启，通过 `fetch('https://registry.npmjs.org/@openai/codex/latest')` 访问 `registry.npmjs.org`；成功和失败结果均在当前进程内缓存 6 小时，每次体检返回时将版本比对结果补入来源结果副本。可用 config `onlineCheck: false` 或环境变量 `DSH_CODEX_OFFLINE=1` 关闭；关闭后在线检查不发任何网络请求，`latestCodexVersion` / `upToDate` 均为 `null`。`codex debug models` 默认在线刷新，失败时回退 `codex debug models --bundled` 并给出 warning；关闭在线检查时直接使用 `--bundled`，并提示使用离线目录。该开关控制体检，不限制委派任务自身联网。
-
-任务提供的本机实测快照（本轮未重跑）：`codexVersion: "0.167.2"`、`latestCodexVersion: "0.167.2"`、`upToDate: true`、`desktopAppVersion: "26.1106.51428"`、`authMode: "chatgpt"`、`planType: "prolite"`、`subscriptionActiveUntil: "2026-12-04T12:17:59+00:00"`，共 10 个模型，`warnings: []`。这些是观测值，不是固定默认值或通用套餐模型映射。
-
-旧 CLI 不识别较新模型目录时，应升级 `codexBin` / `DSH_CODEX_BIN` / PATH / profile 实际选中的安装。profile 内 npm 安装的已实测版本示例：`npm install --prefix ~/.dsh/profiles/desktop @openai/codex@0.167.2`；按实际 profile 调整路径。此命令仅供手动执行，不自动升级；显式路径或 PATH 入口可能优先于该 profile 安装。升级后重启加载插件的进程，再调用体检工具。
-
-## 前置体检
-
-执行任务前会探测所选入口的 `codex --version`，结果在当前进程内按入口路径缓存（包括探测失败）。插件将该版本与 npm 最新版本在线比对，使用上述共享的 6 小时查询缓存，不再使用固定版本阈值。本地版本较旧时，`warnings` 例如：`旧 CLI（0.153.4），npm 最新 0.167.2，建议升级。` 本地探测失败时 `codexVersion` 为 `unknown`，记录告警并继续执行；npm 查询失败时无法比较，不产生升级告警，也不阻断执行。`latestCodexVersion` 和 `upToDate` 是 `computer_use_codex_status` 的字段；任务结果返回 `codexVersion` 和 `warnings`。升级同一路径的 CLI 后需重启加载插件的进程以刷新本地版本缓存。注册、调用链与完整输出契约见[架构说明](docs/ARCHITECTURE.md)。
-
-## 返回与真实证据
-
-用户提供的 Windows 11 Pro 实测（DSH 0.2.2-rc.2 + Codex CLI 0.167.2，commit `e99d5a4`，本轮未重跑）：smoke PASS、exit 0；体检返回 10 个模型、`codexVersion: "0.167.2"`、`planType: "prolite"`、`warnings: []`、`platform: "win32"`、`platformLabel: "Windows"`、`osVersion: "Windows 11 Pro"`；`mode=text` 为 `ok:true`，耗时 52.3 秒，`controls: "model=gpt-6.1-sol(config) reasoningEffort=high(config) serviceTier=priority(config)"`；`mode=desktop` 为 `ok:true`，耗时 100.5 秒。记事本真实输入 `hello`，3 张截图，状态栏「5 个字符」可核验。最新验收见 [RELEASE](RELEASE.md#跨平台验收记录)，操作说明见 [Windows 测试指南](docs/WINDOWS-TEST.md)（其中保留上一轮临时修复测试记录）。
-
-`computer_use_codex` 返回 `ok`、`exitCode`、`mode`、`codexVersion`、`warnings`、`durationMs`、`output`、`controls`（生效的覆盖值及来源）、安全模式说明，日志创建成功时附 `logPath`。**`ok:true` 仅表示 CLI 正常退出，不等于任务目标达成**；桌面任务结合截图复核，文本任务核对返回文本。输出最多 8000 个 JavaScript 字符；两种模式的完整日志均保存在私有临时目录，最终消息文件自动删除。日志和截图可能包含敏感信息，需要手动清理。桌面模式截图默认保留 `<cwd>/.codex-cu/`，也可配置；提示词不保证截图生成。文本模式不创建该目录。
-
-任务提供的本机文本模式实测（本轮未重跑）：`ok: true`、`durationMs: 34776`、`codexVersion: "0.167.2"`，`controls: "model=gpt-6.1-sol(config) reasoningEffort=high(config) serviceTier=priority(config)"`。
-
-已核实的历史实测（任务提供，本轮未重跑）：`{"ok":true,"exitCode":0,"durationMs":47537,...}`。截图 `<workspace>/.codex-cu/calculator-7x8-56.png` 证明计算器 `7×8=56`；历史 `.png` 实为 JPEG，本次未改名，后续提示要求 `.jpg`。证据不随 npm 包分发。
-
-## 已知限制
-
-- `subscriptionActiveUntil` 只是 JWT 声明快照；时间已过期不代表套餐失效或权益终止。
-- Windows 截图路径可能显示为正斜杠形式，这是跨平台显示差异；以返回的绝对路径为准。
-- Windows `.codex-cu/` 中历史 `.png` 文件实为 JPEG 字节；新版本提示词已要求 `.jpg`，不自动重命名历史文件。
-
-更多安全说明与限制见[详细文档](docs/DETAIL.md)。
-
-任务超时后，先请求优雅终止，等待最多 `terminateGraceMs`，仍未退出时再升级为强制终止，为 Codex 清理 computer-use 会话留出时间，减少会话残留。`terminateGraceMs` 仅为插件配置，不是调用参数；config 优先于环境变量 `DSH_CODEX_TERMINATE_GRACE_MS`，默认 `5000` 毫秒，须为 0–30000 的整数。设为 `0` 时跳过优雅终止，直接 KILL。
-
-Windows 先通过 spawn 执行 `taskkill /pid PID /T`，强制终止时追加 `/F`；POSIX 平台以子进程的负 PID 向进程组先发送 SIGTERM，再发送 SIGKILL。进程树／进程组终止失败时，回退 `child.kill(signal)`，使用该阶段对应的信号。目标树或组之外的后代可能继续运行，已发生的桌面修改无法撤销。暂不接入 `execute` 的 `exec` 取消信号：Host 契约未确认，先保留已验证的有界超时，取消集成为后续项。
-
-macOS 上仍残留的虚拟鼠标或共享指示器属于 ChatGPT/Codex 桌面端状态问题，任务进程退出后也可能继续显示。可手动运行以下命令清理：
-
-```sh
-pkill -f SkyComputerUseClient; killall SkyComputerUseService 2>/dev/null
+```text
+DSH → ctx.tools → computer_use_codex → 本机 codex exec → 结果 + 本地证据
 ```
 
-**此命令会影响正在进行的 Codex computer-use 会话，请谨慎使用。** 插件不会自动执行该命令。
+1. bundle patch 加载 `index.js`，注册 `computer_use_codex` 与 `computer_use_codex_status` 两个 Host 工具。
+2. 任务调用校验参数、解析配置，并定位所选 CLI。
+3. 前置体检执行 `codex --version`，与缓存的 npm 最新版本比较。版本探测结果（包括失败）按入口路径在当前进程内缓存；探测失败返回 `unknown` 并告警，npm 查询失败则无法比较，两者均不阻断执行。
+4. 新的 `codex exec` 进程按选定模型控制项与安全参数运行；桌面模式附加桌面/截图指令，文本模式省略这些指令。
+5. 插件收集最终消息、执行状态与日志路径。超时先尝试优雅终止，经过 `terminateGraceMs` 后仍未退出则强制终止。
 
-## 自测与发布
+技术细节见[架构说明](docs/ARCHITECTURE.md)、[项目概览](docs/OVERVIEW.md)与[优化记录](docs/OPTIMIZATION.md)。
 
-在包目录执行：
+## 安全
+
+**`securityMode` 默认是 `bypass`。** 它传入 `--dangerously-bypass-approvals-and-sandbox`，关闭 CLI 审批和沙箱，任务可以影响本机桌面与文件。仅在可信任务与环境中使用。`workspace-write` 传入 `--sandbox workspace-write`；该模式下的真实 GUI 行为尚未验证，操作可能失败。结果包含 `securityMode` 与 `securityNotice`。
+
+文本模式保留相同的安全设置与可用插件。文件沙箱不保证约束外部 GUI 插件；超时无法撤销已发生的桌面影响，目标进程树或组之外的后代可能继续运行。由于信号契约尚未确认，暂未接入 `execute` 的 `exec` 取消信号，已实现有界超时。
+
+日志和截图可能包含敏感信息，需要手动清理。体检工具只在本地解码所需 JWT 声明，不输出或外发 token。套餐元数据是本地声明快照，不是实时权益查询；时间戳已过期本身不代表权益终止。委派的 Codex 任务使用现有认证、插件与网络权限，更多说明见[详细安全文档](docs/DETAIL.md)。
+
+<a id="compatibility"></a>
+
+## 兼容性
+
+| 平台 | `mode=text` | `mode=desktop` | 已记录环境 / 证据 |
+| --- | --- | --- | --- |
+| macOS | 已实测 | 已实测 | DSH 0.2.2-rc.2 + Codex CLI 0.167.2；计算器 `3×9=27`，另有早期 `7×8=56` 证据。 |
+| Windows | 已实测 | 已实测 | Windows 11 Pro + DSH 0.2.2-rc.2 + Codex CLI 0.167.2；记事本输入 `hello`，3 张截图，状态栏显示「5 个字符」。 |
+| Linux | 未验证 | 未验证，不宣称桌面支持 | 需要单独验证；Ubuntu CI 仅检查语法、清单与打包。 |
+
+既有跨平台验收日期为 **2026-11-12**，本次文档更新未重跑桌面测试。macOS 的具体系统版本未记录。Windows 使用 DSH Desktop 的 `desktop` profile、Node v24.14.0、npm 11.9.0，ChatGPT 登录（`planType: prolite`）。两平台的 smoke、体检、文本与桌面四层检查均通过；体检返回 10 个模型，`warnings: []`。
+
+Windows 结果对应 commit `e99d5a4`：文本任务耗时 52.3 秒，桌面任务耗时 100.5 秒。手动重启 DSH 后两个工具首次调用即成功，无 `must declare output` 告警，`application: applied`、`warnings: []`。完整证据见[跨平台发布记录](RELEASE.md#跨平台验收记录)；[Windows 测试指南](docs/WINDOWS-TEST.md)保留了较早一轮临时修复测试的记录。
+
+待验证项包括 Linux 桌面、`workspace-write` 下的真实 GUI、干净 profile 安装及 npm 安装/发布。模型矩阵是带日期的快照，可用性取决于所选 CLI 与账号。
+
+## 开发
+
+### 仓库结构
+
+```text
+.
+├── .github/workflows/validate.yml  # 语法、清单与打包检查
+├── .gitignore
+├── index.js                        # Host 工具与 CLI 执行
+├── cordis.patch.yml                # DSH bundle 加载补丁
+├── package.json                    # 包元数据与 dsh.bundle
+├── icon.svg
+├── locale/
+│   ├── en.json
+│   └── zh.json
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── DETAIL.md
+│   ├── OPTIMIZATION.md
+│   ├── OVERVIEW.md
+│   ├── PUBLISHING.md
+│   ├── WINDOWS-TEST.md
+│   └── assets/amazon-ranking.jpg   # 已打码预览图
+├── test/smoke.mjs                   # 假 CLI smoke 测试
+├── README.md
+├── README.zh.md
+├── RELEASE.md                      # 验收与发布记录
+└── LICENSE
+```
+
+在仓库根目录使用 Node.js 24 与 npm 执行：
+
+```sh
+node --check index.js
+node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; const pkg = JSON.parse(fs.readFileSync("package.json", "utf8")); assert.equal(pkg.dsh?.bundle?.patch, "./cordis.patch.yml"); assert.ok(fs.statSync(pkg.dsh.bundle.patch).isFile());'
+npm pack --dry-run
+```
+
+[GitHub Actions](https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use/actions/workflows/validate.yml) 在 push 与 pull request 时使用 Ubuntu 和 Node.js 24 运行以上检查；工作流不执行桌面任务，也不发布包。
+
+修改运行时逻辑时，单独执行已有 smoke 测试：
+
+```sh
+node test/smoke.mjs
+```
+
+macOS 也可使用 DSH 自带运行时：
 
 ```sh
 ELECTRON_RUN_AS_NODE=1 "/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" test/smoke.mjs
 ```
 
-仅运行假 CLI：Windows 使用 `.js` 文件，由插件通过 Node 启动；其他平台保留 shell 假 CLI。Windows 可运行 `node test/smoke.mjs`。覆盖注册失败保护、JS 假 CLI 各命令和三类真实 30 秒超时；POSIX 验证 TERM 处理、升级 KILL、直接 KILL，Windows 验证有界超时与 taskkill 终止请求，不依赖 POSIX 信号处理器。不操作桌面；用户提供的原生 Windows smoke 结果为 PASS、exit 0，本轮仅记录，未重跑。真实保守模式 GUI、干净 profile 的正式安装及 npm 发布仍未验证。
+smoke 测试使用假 CLI，不操作桌面。Windows 使用经 Node 启动的 `.js` 测试替身，其他平台使用 shell 测试替身。覆盖注册失败保护、CLI 命令与三类真实 30 秒超时：POSIX 验证 TERM 处理及 KILL 升级，Windows 验证有界超时与 `taskkill` 请求。这些测试不证明真实桌面兼容性。
 
-同意独立 unscoped npm 包与仓库 `dsh-plugin` topic：Host 工具与文本委派 provider 职责不同，不向现有 provider 强塞桌面能力；维护、安全审查由发布者承担。
+## 故障排查
 
-作者与 MIT 版权人为 `wx5`。仓库元数据使用 `https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use`，GitHub 用户名为 `wxfiveopps1102`，仓库尚未创建；发布前须确认 npm 包名可用和发布权限。许可证 MIT。
+| 现象 | 检查项 |
+| --- | --- |
+| 工具未出现 | 确认 bundle 安装并启用于正确的 profile；替换包后重启 Host。 |
+| 找不到 Codex 入口 | 将 `codexBin` 或 `DSH_CODEX_BIN` 设为有效文件路径；显式入口无效时不会回退。Windows 上检查实际可执行文件或 `codex.js` 路径。 |
+| 模型或推理档位被拒绝 | 查看 `computer_use_codex_status.models` 中的 `efforts`、`serviceTiers`，使用所选 CLI 与账号可用的值。 |
+| CLI 版本或模型目录仍旧 | 升级由配置 / 环境变量 / PATH / profile 实际选中的安装，再重启 Host 清除进程内缓存。 |
+| 无法操作桌面 | 检查登录状态、所需插件、桌面权限与 `securityMode`；`workspace-write` 的 GUI 行为尚未验证。 |
+| `ok:true`，但结果错误或没有截图 | 核验返回文本和实际截图；CLI 正常退出本身不证明任务完成。 |
+| 任务超时或会话残留 | 查看 `logPath`、`timeoutSeconds` 与 `terminateGraceMs`；已发生的桌面影响及脱离进程树的后代可能保留。 |
+| npm 找不到包 | npm 发布仍在计划中，请使用 Git 仓库安装。 |
+
+profile 内 CLI 安装的已记录版本升级示例为 `npm install --prefix ~/.dsh/profiles/desktop @openai/codex@0.167.2`，请调整 profile 路径。这是手动操作示例，不会自动升级，也不表示该版本是最新版。显式 CLI 路径或 PATH 入口可能优先于该安装。
+
+超时处理在 Windows 上先请求 `taskkill /pid PID /T`，强制终止时追加 `/F`；POSIX 先向子进程组发送 SIGTERM，再发送 SIGKILL。进程树/组终止失败时回退到 `child.kill(signal)`。`terminateGraceMs` 是插件配置，不是调用参数；设为 `0` 时跳过优雅终止。
+
+Windows 截图路径可能使用正斜杠，请以返回的绝对路径为准。历史 `.png` 截图可能包含 JPEG 字节，当前提示词要求 `.jpg`，不会重命名旧文件。macOS 上的虚拟鼠标或共享指示器可能在任务进程退出后残留，可手动清理：
+
+```sh
+pkill -f SkyComputerUseClient
+killall SkyComputerUseService 2>/dev/null
+```
+
+**这些命令会影响正在进行的 Codex computer-use 会话。** 插件不会自动执行。
+
+## 参与贡献
+
+欢迎提交 [Issue](https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use/issues) 或 Pull Request。请提供系统、DSH 与 Codex CLI 版本、任务模式、预期结果和已脱敏的诊断输出。保持 `README.md` 与 `README.zh.md` 对应，运行开发检查，并区分假 CLI 测试与真实桌面证据。不要提交认证文件、token、私密日志或未打码截图。
+
+验收历史与尚待完成的发布工作见 [RELEASE.md](RELEASE.md)。
+
+## 许可证
+
+[MIT](LICENSE) © 2026 wx5。

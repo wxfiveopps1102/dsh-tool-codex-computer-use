@@ -1,60 +1,145 @@
 # dsh-tool-codex-computer-use
 
-A DSH Host tool for one-shot desktop or text tasks via a local Codex CLI, not a subagent provider. [中文](README.zh.md).
+English | [简体中文](README.zh.md)
 
-![Amazon 収納用品 ranking](docs/assets/amazon-ranking.jpg)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![DSH](https://img.shields.io/badge/DSH-0.2.2-1f6feb.svg)](https://github.com/deepseek-ai/deepseek-harness)
+[![macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey.svg)](#compatibility)
+[![validate](https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use/actions/workflows/validate.yml/badge.svg)](https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use/actions/workflows/validate.yml)
 
-## Related plugin
+Delegate one-shot desktop and text tasks from DeepSeek Harness (DSH) to your local Codex CLI, with configurable models, reasoning effort and service tiers.
 
-This plugin runs through Codex CLI, with verification possible at every step, slower execution, and cross-platform support including Windows; the [native dsh-tool-desktop-use plugin](https://github.com/wxfiveopps1102/dsh-tool-desktop-use) calls macOS APIs directly for millisecond-scale batched actions, supports macOS only, and suits frequent operations.
+![Preview](docs/assets/amazon-ranking.jpg)
 
-## Purpose and trade-offs
+*Live capture: computer_use_codex completed a category search on Amazon Japan.*
 
-This tool delegates one-shot tasks from DSH to the local Codex CLI. It supports `mode=desktop` for desktop operations and `mode=text` for text-only delegation. It is not a replacement for Codex and does not support multi-turn conversations.
+## Features
 
-Each call starts a new `codex exec` process, adding roughly 3–5 seconds of startup overhead compared with working directly in the Codex app. That overhead accounts for about 6% of a single-step task and a smaller share of multi-step tasks; these are approximate figures, not fixed timings.
+- **Desktop and text modes:** use `computer_use_codex` for desktop automation or a one-shot text task.
+- **Model controls:** choose a model, reasoning effort and service tier per call or through plugin defaults; results show the effective overrides and their sources.
+- **Environment inspection:** `computer_use_codex_status` reports CLI and desktop app versions, models, authentication metadata and platform details.
+- **Verifiable results:** inspect returned text, screenshot paths and local logs; timeout handling attempts graceful termination before forcing the process to stop.
+- **macOS and Windows validation:** real desktop runs include macOS Calculator and Windows Notepad; see [Compatibility](#compatibility).
+- **Small Host bundle:** no runtime dependencies; registers tools through `ctx.tools` and invokes the CLI selected by `codexBin`.
 
-In return, tasks can be orchestrated within DSH, with a choice of model, reasoning effort and service tier, and run consecutively without supervision. The tool is a poor fit for work that needs ongoing follow-up questions, reuse of context already in Codex, or minimal delay on every call. Unattended execution still carries the risks described under Configuration, including the default `bypass` mode.
+Each task starts a fresh `codex exec` process. Calls are independent and cannot continue a session or ask follow-up questions. Existing measurements suggest about 3–5 seconds of startup overhead; actual timings vary. DSH's built-in `subagent_codex` serves a separate role as a subagent provider; the two can coexist. For direct macOS API automation, see the related [dsh-tool-desktop-use](https://github.com/wxfiveopps1102/dsh-tool-desktop-use) plugin.
 
-Install this package through your DSH profile's npm/package installation flow and load its `cordis.patch.yml` bundle patch. Requires Node >=20 and a signed-in Codex CLI. Desktop tasks additionally require computer-use/browser plugins; on macOS, grant Accessibility and Screen Recording permissions to the relevant Codex/host application. Normal profile installation remains unverified.
+## Requirements
 
-Call `computer_use_codex` with `{"task":"Calculate 7×8 and verify by screenshot","cwd":"/path/to/workspace","timeoutSeconds":600}`. The working directory must exist. Each invocation is independent: no follow-up questions or session continuation.
+- DSH in the **0.2.2 release line**; recorded end-to-end validation used **0.2.2-rc.2**.
+- **Node.js >=20**. Repository CI uses Node.js 24.
+- An installed, signed-in **Codex CLI**. Recorded validation used **0.167.2**; the plugin uses your local installation.
+- For desktop tasks: the required computer-use/browser plugins and an available desktop session. On macOS, grant **Accessibility** and **Screen Recording** permissions to the relevant Codex/host application.
+- An existing working directory for `cwd`. See [Compatibility](#compatibility) for tested environments and remaining gaps.
 
-## Supported platforms
+## Install
 
-| Platform | `mode=text` | `mode=desktop` |
-| --- | --- | --- |
-| macOS | Supported | Tested: Calculator `7×8=56` |
-| Windows | Tested | Tested: Windows 11 Pro + DSH 0.2.2-rc.2 + Codex CLI 0.167.2; Notepad contained `hello`, with three screenshots and a status bar showing 5 characters |
-| Linux | Supported | Not guaranteed |
+The repository root is the installable DSH bundle: `package.json` points to `cordis.patch.yml`. Choose the intended DSH profile; replace `desktop` below if your profile has a different name. Fresh-profile installation has not yet been verified; existing validation used a locally linked bundle.
 
-Text mode requires a working local Codex CLI. The user-supplied Windows verification is recorded on **2026-11-12**: DSH Desktop with the `desktop` profile, Node v24.14.0, npm 11.9.0, and ChatGPT login (`planType: prolite`). All four layers passed. After manually restarting DSH, both tools succeeded on their first calls, with no `must declare output` warning, `application: applied`, and `warnings: []`. The plugin SHA matches commit `e99d5a4`; see the [cross-platform verification record](RELEASE.md#跨平台验收记录) for full results. Tests were not rerun for this documentation update.
+### From the Git repository
 
-## Relationship with DSH's built-in subagent_codex
+With `dsh` on your PATH:
 
-- The official `@deepseek-ai/dsh-subagent-codex` is a **subagent provider** registered with `ctx.subagents`. It runs through the Codex app-server and pins its bundled dependency to `@openai/codex@0.153.4`.
-- This plugin is a **Host tool** registered with `ctx.tools`. It directly invokes the user's chosen Codex CLI through the configurable `codexBin` path, allowing newer CLI releases and the models available through them to be used.
-- The two packages **do not depend on each other and can be installed together**. Use the official provider when you need a subagent tree or session records; use this tool when you need to specify a model or CLI, or delegate a one-shot text-only task with `mode=text`.
+```sh
+dsh plugin --profile desktop add git+https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use.git
+```
 
-Verified with Codex CLI 0.167.2 + DSH 0.2.2-rc.2. This refers to existing validation; it was not rerun for this documentation update.
+After installation, enable the bundle in DSH's **Plugins** page. When replacing an installed version, restart the Host process to load the new module.
 
-## Call parameters
+### From the DSH Plugins page
+
+Open **Plugins → Add plugin**, enter the Git installation target below, install it, and enable the bundle:
+
+```text
+git+https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use.git
+```
+
+Repository: [wxfiveopps1102/dsh-tool-codex-computer-use](https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use). A community catalog listing is not required for this route; catalog inclusion remains planned.
+
+### By npm package name — planned
+
+**The npm package has not been published.** The planned package name is `dsh-tool-codex-computer-use`; the following command is for use **after publication**:
+
+```sh
+dsh plugin --profile desktop add dsh-tool-codex-computer-use
+```
+
+Use a Git installation route for now. Publication and package-name availability checks remain pending; see the [release record](RELEASE.md) and [publishing guide (Chinese)](docs/PUBLISHING.md).
+
+## Usage
+
+Once the plugin is enabled, call its tools from DSH. The JSON below contains tool arguments, not shell commands.
+
+### Desktop task — `mode=desktop`
+
+Call `computer_use_codex` to calculate a value and request a screenshot:
+
+```json
+{
+  "task": "Open Calculator, calculate 7 × 8, and verify the result with a screenshot.",
+  "mode": "desktop",
+  "cwd": "/absolute/path/to/workspace",
+  "timeoutSeconds": 600
+}
+```
+
+Replace `cwd` with an existing directory; on Windows, for example, use `C:/path/to/workspace`. Desktop mode is the default. Screenshots are requested as `.jpg` in `<cwd>/.codex-cu/` unless configured otherwise; a prompt does not guarantee that screenshots are created.
+
+### Text task — `mode=text`
+
+Call `computer_use_codex` for a one-shot explanation:
+
+```json
+{
+  "task": "Explain what 7 × 8 means in one sentence.",
+  "mode": "text",
+  "timeoutSeconds": 600
+}
+```
+
+Text mode omits desktop/screenshot instructions and screenshot-directory creation. It keeps the configured security mode and does not disable Codex plugins. `mode` is a call argument only, with no config or environment default.
+
+### Call parameters
 
 | Parameter | Meaning / default |
 | --- | --- |
 | `task` | Required, non-empty task description. |
-| `mode` | `desktop` (default) or `text`. Text tasks do not operate the desktop or create a screenshot directory. |
+| `mode` | `desktop` (default) or `text`. |
 | `cwd` | Existing working directory; defaults to the Host process directory. |
-| `timeoutSeconds` | Integer, 30–3600; inherits plugin config or environment, initially 600. |
-| `model` | Model ID; inherits the defaults described below. |
-| `reasoningEffort` | Reasoning effort; inherits the defaults described below. |
-| `serviceTier` | Service tier; inherits the defaults described below. |
+| `timeoutSeconds` | Integer, 30–3600; call argument > config > environment > `600`. |
+| `model` | Model ID; inherits the defaults under [Configuration](#configuration). |
+| `reasoningEffort` | Reasoning effort; follows the same precedence as `model`. |
+| `serviceTier` | Service tier; follows the same precedence as `model`. |
 
-Text example: call `computer_use_codex` with `{"task":"Explain what 7×8 means in one sentence","mode":"text"}`. `mode` is a call argument only; there is no config or environment default for it. Text mode omits desktop/screenshot instructions and directory creation; it does not change `securityMode` or disable Codex plugins.
+### Environment inspection
+
+Call `computer_use_codex_status` with `{}`. It returns environment JSON directly, without the task result's `ok`/`output` wrapper, and does not run a desktop task or create screenshot directories.
+
+| Field | Meaning |
+| --- | --- |
+| `platform`, `platformLabel`, `osVersion` | Platform identifier, readable platform name and OS version. |
+| `codexVersion` | CLI version from `codex doctor --json`, or `unknown`. |
+| `latestCodexVersion` | Latest version from npm, or `null` when checking is disabled or fails. |
+| `upToDate` | `true` if the local version is at least the npm latest, `false` if older, or `null` if comparison is unavailable. |
+| `desktopAppVersion`, `authMode` | Desktop app version and stored authentication mode from doctor, or `unknown`. |
+| `planType` | Local JWT's `chatgpt_plan_type` claim, or `null`. |
+| `subscriptionActiveUntil` | Local JWT's `chatgpt_subscription_active_until` claim, or `null`; not a live entitlement check. |
+| `models` | Catalog objects containing `slug`, `displayName`, `efforts` and `serviceTiers`; defaults to `[]`. |
+| `warnings` | Non-fatal source failures, bundled-catalog notices and upgrade suggestions; `[]` when none occur. |
+
+The sources are `codex debug models`, `codex doctor --json` and `$CODEX_HOME/auth.json` (default `~/.codex/auth.json`). Source results are cached for five minutes per resolved CLI path and online-check setting in the current process. A source failure adds a warning while preserving other results; CLI entry resolution must succeed first. Use `planType` with `models` when selecting a model; Codex validates the final selection.
+
+### Task results
+
+`computer_use_codex` returns `ok`, `exitCode`, `mode`, `codexVersion`, `warnings`, `durationMs`, `output`, `controls`, `securityMode`, `securityNotice` and, when available, `logPath`. **`ok:true` means successful CLI exit, not achievement of the task objective.** Review screenshots for desktop tasks and returned text for text tasks.
+
+Output is limited to 8000 JavaScript characters. Full logs remain in a private system temporary directory in both modes; final-message files are deleted. See [Security](#security) for retention and permission boundaries, and the [architecture guide (Chinese)](docs/ARCHITECTURE.md) for the complete output contract.
 
 ## Configuration
 
-Explicit `apply(ctx, config)` settings override environment variables. Environment variables must reach the Host process; setting them only in a shell tool may not work. There is no schemastery `Config` export: workspace-linked imports failed, profile resolution is unverified, and no runtime dependency is added.
+For `model`, `reasoningEffort` and `serviceTier`, each field resolves independently as **call argument > plugin config > environment variable > local Codex configuration** (`~/.codex/config.toml`). Omitting a call argument still uses any config or environment default. `timeoutSeconds` uses the same first three levels, then falls back to `600`.
+
+Other settings use `apply(ctx, config)` values before their environment defaults. Environment variables must reach the Host process; setting them only in a shell tool may not work. The online-check switches are an exception: either disabling switch takes effect, as described below.
 
 | Config | Environment | Default |
 | --- | --- | --- |
@@ -66,12 +151,13 @@ Explicit `apply(ctx, config)` settings override environment variables. Environme
 | `model` | `DSH_CODEX_MODEL` | inherit the local Codex configuration |
 | `reasoningEffort` | `DSH_CODEX_REASONING_EFFORT` | inherit the local Codex configuration |
 | `serviceTier` | `DSH_CODEX_SERVICE_TIER` | inherit the local Codex configuration |
+| `onlineCheck` | `DSH_CODEX_OFFLINE` | enabled; config `false` or environment `1` disables inspection's online checks |
 
-Binary settings must be file paths, not shell commands. Invalid explicit entries fail without fallback; missing entries return readable `ok:false`. JavaScript entries use `DSH_NODE_EXECUTABLE` or the current runtime with `ELECTRON_RUN_AS_NODE=1`. Relative screenshot paths resolve against `cwd`.
+CLI resolution is **config → environment → PATH → profile**. Explicit entries must be file paths, not shell commands; invalid explicit entries fail without fallback. Task calls report resolution failures as readable `ok:false` results. JavaScript entries use `DSH_NODE_EXECUTABLE` or the current runtime with `ELECTRON_RUN_AS_NODE=1`. Relative screenshot paths resolve against `cwd`.
 
-`bypass` passes `--dangerously-bypass-approvals-and-sandbox`, disabling approvals and the CLI sandbox, allowing direct desktop/file operations. This remains the compatibility default for GUI use. `workspace-write` instead passes `--sandbox workspace-write`; GUI operations may fail. Results include `securityMode` and `securityNotice`. Neither mode undoes desktop effects or guarantees external GUI plugins are contained by a filesystem sandbox.
+There is no schemastery `Config` export or promised automatic configuration UI: workspace-linked imports failed, profile resolution is unverified, and the plugin has no runtime dependencies.
 
-### Model × reasoning effort matrix (live catalog, 2026-11-12)
+### Model × reasoning effort matrix (snapshot, 2026-11-12)
 
 This is the user-supplied snapshot of the live catalog on 2026-11-12; it was not fetched again for this documentation update.
 
@@ -90,9 +176,7 @@ This is the user-supplied snapshot of the live catalog on 2026-11-12; it was not
 
 `ultra` = `max` reasoning + automatic task delegation, creating additional subtasks and token costs. Codex validates reasoning efforts; invalid values return HTTP 400. Actual availability varies with the subscription plan and CLI version; use `models[].efforts` returned by `computer_use_codex_status` as the source of truth.
 
-## Choosing a model, reasoning effort and service tier
-
-`computer_use_codex` accepts optional call arguments `model`, `reasoningEffort` and `serviceTier`. Set `config.model`, `config.reasoningEffort` and `config.serviceTier` for plugin defaults, or use the environment variables listed above. Each field is resolved independently through three override levels: **call argument > config > environment variable**. If all three are absent, it inherits the local Codex configuration (`~/.codex/config.toml`). Omitting a call argument alone does not bypass config or environment defaults.
+### Model and service-tier defaults
 
 Example plugin entry in `cordis.patch.yml`:
 
@@ -106,86 +190,144 @@ Example plugin entry in `cordis.patch.yml`:
         serviceTier: priority
 ```
 
-See the matrix above for models and reasoning efforts. Call `computer_use_codex_status` to inspect the current catalog and use `planType` alongside it when judging model availability. The Fast service tier ID is `priority`; check each model's returned `serviceTiers` before selecting it.
+The Fast service tier ID is `priority`; check the model's returned `serviceTiers` before selecting it. Defaults can also be set with `DSH_CODEX_MODEL`, `DSH_CODEX_REASONING_EFFORT` and `DSH_CODEX_SERVICE_TIER`.
 
-The returned `controls` string lists effective overrides and their sources, separated by spaces. With the config example above and no call overrides, it reads:
+The returned `controls` string lists effective overrides and sources, separated by spaces. With the config example above and no call overrides:
 
 ```text
 model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(config)
 ```
 
-`reasoningEffort=high(config)` comes from plugin config; `reasoningEffort=low(environment)` comes from the environment; `reasoningEffort=low` without a suffix comes from a call argument. Fields not listed inherit the local Codex configuration. If no fields are overridden, the entire string is `inherited from Codex config`; it does not report the inherited values themselves.
+`reasoningEffort=high(config)` comes from plugin config; `reasoningEffort=low(environment)` comes from the environment; `reasoningEffort=low` without a suffix comes from a call argument. Fields not listed inherit the local Codex configuration. If no fields are overridden, the entire string is `inherited from Codex config`; it does not report inherited values themselves.
 
-## Environment inspection
+### Online checks and caching
 
-The status response includes the platform and OS version to help with troubleshooting.
+Online checking is enabled by default. The plugin queries `https://registry.npmjs.org/@openai/codex/latest`; successful and failed queries are cached for six hours in the current process and shared by the task and status tools. Each status response adds the version comparison to a copy of the cached source results.
 
-Call `computer_use_codex_status` with `{}` (no parameters). It returns environment JSON directly, without the task result's `ok`/`output` wrapper:
+Set `onlineCheck: false` or `DSH_CODEX_OFFLINE=1` to disable these online checks; `latestCodexVersion` and `upToDate` then return `null`. The model catalog normally refreshes through `codex debug models`; a failure falls back to `codex debug models --bundled` with a warning. With online checking disabled, it uses `--bundled` directly and adds an offline-catalog warning. These switches control inspection, not networking by delegated tasks.
 
-| Field | Meaning |
-| --- | --- |
-| `codexVersion` | CLI version from `codex doctor --json`, or `unknown`. |
-| `latestCodexVersion` | `string` or `null`: latest version from npm; `null` if online checking is disabled or the query fails. |
-| `upToDate` | `boolean` or `null`: `true` if the local version is at least the npm latest, `false` if older, or `null` if comparison is unavailable. |
-| `desktopAppVersion` | Desktop app version from doctor, or `unknown`. |
-| `authMode` | Stored authentication mode from doctor, or `unknown`. |
-| `planType` | Local JWT's `chatgpt_plan_type` claim, or `null`; helps interpret the model catalog for the subscription. |
-| `subscriptionActiveUntil` | Local JWT's `chatgpt_subscription_active_until` claim, or `null`. |
-| `models` | Catalog from `codex debug models`; objects with `slug`, `displayName`, `efforts` (reasoning levels) and `serviceTiers` (tier IDs). Defaults to `[]`. |
-| `warnings` | Non-fatal source failures, bundled-catalog notices and upgrade suggestions; `[]` when none occur. |
+## How it works
 
-The third source is `$CODEX_HOME/auth.json` (default `~/.codex/auth.json`). The plugin only decodes the required JWT claims locally; it does not output or transmit tokens. Subscription metadata is a local claim snapshot, not a live entitlement check: use `planType` together with `models`, with Codex validating the final selection.
-
-The three source results are cached for five minutes per resolved CLI path and online-check setting in the current process. A source failure adds a warning while preserving other results. CLI entry resolution must succeed first; its errors are not converted into source warnings. This tool does not run a desktop task or create screenshot directories.
-
-Online checking is enabled by default and accesses `registry.npmjs.org` via `fetch('https://registry.npmjs.org/@openai/codex/latest')`. Successful and failed queries are cached for 6 hours in the current process; each status response adds the version comparison to a copy of the source results. Configure `onlineCheck: false` or set `DSH_CODEX_OFFLINE=1` to disable online checking: no online-check network requests are made, and `latestCodexVersion` / `upToDate` are both `null`. `codex debug models` refreshes online by default; if it fails, the plugin falls back to `codex debug models --bundled` and adds a warning. With online checking disabled, it uses `--bundled` directly and adds an offline-catalog warning. This switch controls inspection, not networking by delegated tasks.
-
-Supplied local snapshot (not rerun for this documentation): `codexVersion: "0.167.2"`, `latestCodexVersion: "0.167.2"`, `upToDate: true`, `desktopAppVersion: "26.1106.51428"`, `authMode: "chatgpt"`, `planType: "prolite"`, `subscriptionActiveUntil: "2026-12-04T12:17:59+00:00"`, 10 models and `warnings: []`. These are observations, not fixed defaults or a universal plan-to-model mapping.
-
-If an older CLI cannot recognize the newer catalog, upgrade the installation actually selected by `codexBin` / `DSH_CODEX_BIN` / PATH / profile. For the profile-local npm installation, the tested-version example is `npm install --prefix ~/.dsh/profiles/desktop @openai/codex@0.167.2`; adjust the prefix to your profile. This is a manual example, not an automatic upgrade. An explicit path or PATH entry can take precedence over that profile installation. Restart the process loading the plugin after upgrading, then call the status tool again.
-
-## CLI version preflight
-
-Before running a task, the plugin probes `codex --version` using the resolved entry and caches the result by entry path within the current process, including probe failures. It compares that version with the npm latest using the shared 6-hour online-query cache described above, rather than a fixed version threshold. When the local CLI is older, `warnings` contains an upgrade suggestion, for example: `旧 CLI（0.153.4），npm 最新 0.167.2，建议升级。` A failed local probe returns `codexVersion: "unknown"`, adds a warning and continues execution. A failed npm query makes comparison unavailable without adding an upgrade warning or blocking execution. The `latestCodexVersion` and `upToDate` fields belong to `computer_use_codex_status`; task results return `codexVersion` and `warnings`. After upgrading the CLI at the same path, restart the process loading the plugin to refresh the local-version cache. See the [architecture guide (Chinese)](docs/ARCHITECTURE.md) for registration, execution flow and the full output contract.
-
-## Results and real evidence
-
-User-supplied Windows 11 Pro results (DSH 0.2.2-rc.2 + Codex CLI 0.167.2, commit `e99d5a4`; not rerun here): smoke PASS, exit 0; status returned 10 models, `codexVersion: "0.167.2"`, `planType: "prolite"`, `warnings: []`, `platform: "win32"`, `platformLabel: "Windows"`, and `osVersion: "Windows 11 Pro"`; `mode=text` returned `ok:true` in 52.3 s with `controls: "model=gpt-6.1-sol(config) reasoningEffort=high(config) serviceTier=priority(config)"`; `mode=desktop` returned `ok:true` in 100.5 s. Notepad contained `hello`, with three screenshots and a status bar showing 5 characters. See [RELEASE](RELEASE.md#跨平台验收记录) for the latest verification and the [Windows test guide](docs/WINDOWS-TEST.md) for instructions (the guide retains the earlier temporary-fix test record).
-
-`computer_use_codex` returns `ok`, `exitCode`, `mode`, `codexVersion`, `warnings`, `durationMs`, `output`, `controls` (effective overrides and sources), security fields, and `logPath` when available. **`ok:true` means successful CLI exit, not achievement of the task objective.** Review screenshots for desktop tasks and the returned text for text tasks. Output is limited to 8000 JavaScript characters. Full logs remain in a private system temporary directory in both modes; final-message files are deleted. Logs/screenshots may contain sensitive data and require manual cleanup. In desktop mode, screenshots are requested as `.jpg` in `<cwd>/.codex-cu/` by default; prompts do not guarantee creation. Text mode does not create this directory.
-
-Supplied local text-mode run (not rerun here): `ok: true`, `durationMs: 34776`, `codexVersion: "0.167.2"`, and `controls: "model=gpt-6.1-sol(config) reasoningEffort=high(config) serviceTier=priority(config)"`.
-
-Previously verified real run, supplied as evidence and not repeated here: `{"ok":true,"exitCode":0,"durationMs":47537,...}`. `<workspace>/.codex-cu/calculator-7x8-56.png` proves Calculator displayed `7×8=56`. The historical `.png` contains JPEG bytes; this change does not rename it. Future prompts request `.jpg`. Evidence is outside the npm package.
-
-## Known limitations
-
-- `subscriptionActiveUntil` is only a snapshot of a JWT claim. A past timestamp does not mean the subscription has expired or lost its benefits.
-- Screenshot paths may use forward slashes on Windows; this is a cross-platform display difference. Use the returned absolute path.
-- Historical Windows `.codex-cu/*.png` files contain JPEG bytes. The new prompt already requests `.jpg`; existing files are not renamed.
-
-See the [detailed safety and limitations guide (Chinese)](docs/DETAIL.md) for more information.
-
-On task timeout, the plugin requests graceful termination, waits up to `terminateGraceMs`, then escalates to forced termination if the process has not exited. This gives Codex time to clean up computer-use sessions and reduces leftover sessions. `terminateGraceMs` is a plugin setting, not a call argument: config overrides `DSH_CODEX_TERMINATE_GRACE_MS`, with a default of `5000` milliseconds and an integer range of 0–30000. Set it to `0` to send KILL immediately without the graceful step.
-
-Windows first spawns `taskkill /pid PID /T`, then adds `/F` for forced termination. POSIX platforms send SIGTERM to the process group via the negative child PID, then SIGKILL. Failed tree/group termination falls back to `child.kill(signal)` using the signal for that step. Descendants outside the targeted tree or group may remain, and prior GUI effects cannot be undone. Host cancellation through `execute`'s `exec` argument is not implemented because the signal contract is unverified; bounded timeout remains in place.
-
-On macOS, a lingering virtual mouse or screen-sharing indicator is a ChatGPT/Codex desktop app state issue and can remain after the task process exits. For manual cleanup, run:
-
-```sh
-pkill -f SkyComputerUseClient; killall SkyComputerUseService 2>/dev/null
+```text
+DSH → ctx.tools → computer_use_codex → local codex exec → result + local evidence
 ```
 
-**Use with care: this affects any ongoing Codex computer-use sessions.** The plugin does not run this command automatically.
+1. The bundle patch loads `index.js`, which registers `computer_use_codex` and `computer_use_codex_status` as Host tools.
+2. A task call validates arguments, resolves configuration and locates the chosen CLI.
+3. A preflight runs `codex --version` and compares it with the cached npm latest. Version probes, including failures, are cached by entry path for the current process. A failed probe returns `unknown` with a warning; a failed npm query leaves comparison unavailable. Neither blocks execution.
+4. A fresh `codex exec` runs with the selected model controls and security flags. Desktop mode adds desktop/screenshot instructions; text mode omits them.
+5. The plugin captures the final message, execution status and log path. On timeout, it attempts graceful termination, then forces termination after `terminateGraceMs`.
 
-## Validation and publication
+See the [architecture](docs/ARCHITECTURE.md), [overview](docs/OVERVIEW.md) and [optimization notes](docs/OPTIMIZATION.md) for technical detail (Chinese).
 
-From this package directory:
+## Security
+
+**The default `securityMode` is `bypass`.** It passes `--dangerously-bypass-approvals-and-sandbox`, disabling CLI approvals and the sandbox so tasks can affect the local desktop and files. Use it only for tasks and environments you trust. `workspace-write` passes `--sandbox workspace-write`; real GUI behavior in that mode remains unverified and may fail. Results include `securityMode` and `securityNotice`.
+
+Text mode retains the same security setting and available plugins. A filesystem sandbox does not guarantee containment of external GUI plugins. Timeouts cannot undo desktop effects, and descendants outside the targeted process tree or group may remain. Host cancellation through `execute`'s `exec` argument is not integrated because the signal contract remains unverified; bounded timeout is implemented.
+
+Logs and screenshots may contain sensitive data and require manual cleanup. The status tool only decodes the required JWT claims locally; it does not output or transmit tokens. Subscription metadata is a local claim snapshot, not a live entitlement check; a past timestamp alone does not establish that benefits have ended. Delegated Codex tasks use your configured authentication, plugins and network access. See the [detailed safety guide (Chinese)](docs/DETAIL.md).
+
+## Compatibility
+
+| Platform | `mode=text` | `mode=desktop` | Recorded environment / evidence |
+| --- | --- | --- | --- |
+| macOS | Tested | Tested | DSH 0.2.2-rc.2 + Codex CLI 0.167.2; Calculator `3×9=27`; earlier `7×8=56` evidence also exists. |
+| Windows | Tested | Tested | Windows 11 Pro + DSH 0.2.2-rc.2 + Codex CLI 0.167.2; Notepad contained `hello`, with three screenshots and a status bar showing 5 characters. |
+| Linux | Not verified | Not verified; no desktop-support claim | Requires separate validation. Ubuntu CI only checks syntax, manifest and packaging. |
+
+The existing cross-platform validation is dated **2026-11-12**; desktop tests were not rerun for this documentation update. The macOS OS version was not recorded. Windows used DSH Desktop's `desktop` profile, Node v24.14.0, npm 11.9.0 and ChatGPT login (`planType: prolite`). Both platforms passed smoke, status, text and desktop checks; status returned 10 models with `warnings: []`.
+
+Windows results correspond to commit `e99d5a4`: text completed in 52.3 s and desktop in 100.5 s. After manually restarting DSH, both tools succeeded on their first calls, with no `must declare output` warning, `application: applied` and `warnings: []`. Full evidence is in the [cross-platform release record](RELEASE.md#跨平台验收记录); the [Windows test guide](docs/WINDOWS-TEST.md) retains an earlier temporary-fix test record.
+
+Remaining gaps include Linux desktop behavior, real GUI tasks under `workspace-write`, clean-profile installation and npm installation/publication. The model matrix is a dated snapshot; availability depends on the selected CLI and account.
+
+## Development
+
+### Repository layout
+
+```text
+.
+├── .github/workflows/validate.yml  # Syntax, manifest and package checks
+├── .gitignore
+├── index.js                        # Host tools and CLI execution
+├── cordis.patch.yml                # DSH bundle loader patch
+├── package.json                    # Package metadata and dsh.bundle
+├── icon.svg
+├── locale/
+│   ├── en.json
+│   └── zh.json
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── DETAIL.md
+│   ├── OPTIMIZATION.md
+│   ├── OVERVIEW.md
+│   ├── PUBLISHING.md
+│   ├── WINDOWS-TEST.md
+│   └── assets/amazon-ranking.jpg   # Redacted preview
+├── test/smoke.mjs                   # Fake-CLI smoke tests
+├── README.md
+├── README.zh.md
+├── RELEASE.md                      # Validation and publication record
+└── LICENSE
+```
+
+From the repository root, with Node.js 24 and npm available:
+
+```sh
+node --check index.js
+node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; const pkg = JSON.parse(fs.readFileSync("package.json", "utf8")); assert.equal(pkg.dsh?.bundle?.patch, "./cordis.patch.yml"); assert.ok(fs.statSync(pkg.dsh.bundle.patch).isFile());'
+npm pack --dry-run
+```
+
+[GitHub Actions](https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use/actions/workflows/validate.yml) runs these checks on Ubuntu with Node.js 24 for pushes and pull requests. The workflow does not run desktop tasks or publish a package.
+
+For runtime changes, run the existing smoke suite separately:
+
+```sh
+node test/smoke.mjs
+```
+
+On macOS, the DSH-bundled runtime is another option:
 
 ```sh
 ELECTRON_RUN_AS_NODE=1 "/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" test/smoke.mjs
 ```
 
-Tests use fake CLIs only: Windows uses `.js` files through the plugin's Node launcher; other platforms retain shell fixtures. Run `node test/smoke.mjs` with Node on Windows. Registration failures, JS fixture commands and three real 30-second timeouts are covered. POSIX tests assert TERM handling, KILL escalation and direct KILL; Windows asserts bounded timeouts and taskkill termination requests without assuming POSIX signal handlers. No desktop operation is performed. The user supplied a native Windows smoke PASS with exit 0; this documentation update records that result without rerunning it. Real conservative-mode GUI behavior, normal installation into a clean profile, and npm publication remain unverified.
+Smoke tests use fake CLIs and do not operate the desktop. Windows uses `.js` fixtures via the Node launcher; other platforms use shell fixtures. Coverage includes registration failure handling, CLI commands and three real 30-second timeout cases. POSIX checks TERM handling and KILL escalation; Windows checks bounded timeout and `taskkill` requests. These tests do not establish real desktop compatibility.
 
-The author and MIT copyright holder are `wx5`. Repository metadata uses `https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use`, with `wxfiveopps1102` as the GitHub owner; the repository has not yet been created. Confirm npm name availability and ownership; tag the actual repository `dsh-plugin` for directory submission. The independent unscoped package keeps Host tool semantics separate from subagent providers; maintainers own security review and ongoing maintenance. MIT licensed.
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| Tools do not appear | Confirm that the bundle is installed and enabled in the intended profile; restart the Host after replacing the package. |
+| Codex entry cannot be found | Set `codexBin` or `DSH_CODEX_BIN` to a valid file path. An invalid explicit path fails without fallback; on Windows, check the actual executable or `codex.js` path. |
+| Model or reasoning effort is rejected | Inspect `computer_use_codex_status.models`, especially `efforts` and `serviceTiers`; use values available to the selected CLI and account. |
+| CLI version or catalog appears stale | Upgrade the installation actually selected by config / environment / PATH / profile, then restart the Host to clear process-local caches. |
+| Desktop access fails | Check authentication, required plugins, desktop permissions and `securityMode`; GUI behavior under `workspace-write` remains unverified. |
+| `ok:true`, but the result is wrong or no screenshot exists | Verify the returned text and actual screenshot evidence; successful CLI exit alone does not prove task completion. |
+| A task times out or leaves a session behind | Review `logPath`, `timeoutSeconds` and `terminateGraceMs`; prior desktop effects and detached descendants may remain. |
+| npm cannot find the package | npm publication is planned; use the Git repository installation route. |
+
+For a profile-local CLI installation, the recorded-version upgrade example is `npm install --prefix ~/.dsh/profiles/desktop @openai/codex@0.167.2`; adjust the profile path. This is a manual example, not an automatic upgrade or a claim about the latest version. An explicit CLI path or PATH entry may take precedence over that installation.
+
+Timeout handling first requests `taskkill /pid PID /T` on Windows and adds `/F` when forced termination is needed. POSIX sends SIGTERM to the child process group, then SIGKILL. Failed tree/group termination falls back to `child.kill(signal)`. `terminateGraceMs` is a plugin setting, not a call argument; setting it to `0` skips the graceful step.
+
+Windows screenshot paths may use forward slashes; use the returned absolute path. Historical `.png` screenshots can contain JPEG bytes; current prompts request `.jpg` without renaming old files. On macOS, a virtual mouse or sharing indicator can remain after the task process exits. For manual cleanup:
+
+```sh
+pkill -f SkyComputerUseClient
+killall SkyComputerUseService 2>/dev/null
+```
+
+**This affects any ongoing Codex computer-use sessions.** The plugin does not run these commands automatically.
+
+## Contributing
+
+[Issues](https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use/issues) and pull requests are welcome. Include your OS, DSH and Codex CLI versions, the task mode, expected result and redacted diagnostic output. Keep `README.md` and `README.zh.md` aligned, run the development checks, and distinguish fake-CLI tests from real desktop evidence. Do not commit authentication files, tokens, private logs or unredacted screenshots.
+
+See [RELEASE.md](RELEASE.md) for validation history and publication work still pending.
+
+## License
+
+[MIT](LICENSE) © 2026 wx5.
