@@ -8,7 +8,7 @@
 
 ## 支持平台
 
-`mode=text` 支持 macOS、Windows、Linux，前提是本机可运行 Codex CLI。`mode=desktop` 已在 macOS 验证；Windows 桌面操作尚未实测，需自行确认 Windows 环境中 computer-use 插件的可用性；不保证 Linux 桌面支持。
+`mode=text` 支持 macOS、Windows、Linux，前提是本机可运行 Codex CLI。`mode=desktop` 已在 macOS 和 Windows 实测；不保证 Linux 桌面支持。用户提供的 Windows 验证环境为 Windows + DSH 0.2.2-rc.2 + Codex CLI 0.167.2：记事本真实输入 `hello`，6 张截图，状态栏「5 个字符」可核验。本轮未重跑真实 GUI。
 
 ## 执行模式
 
@@ -35,6 +35,8 @@ model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(conf
 未列出的字段继承 Codex 本地配置；三个字段均无覆盖时，整个字符串为 `inherited from Codex config`，不会展开继承到的具体值。
 
 ## 环境体检
+
+DSH 0.2.2-rc.2 要求每个工具声明 `output: { schema, render }`。status 工具现已补齐对象 schema 和 JSON 文本渲染；`apply()` 先注册主工具 `computer_use_codex`，再注册 status。status 注册失败只记一条错误并继续；可选 `ctx.effect` 同步失败时回退并复用已注册工具，清理异常也不会阻断另一个工具的清理。主工具自身注册失败仍会抛出，避免掩盖加载错误。
 
 `computer_use_codex_status` 无参数，以 `{}` 调用；经 `resolveCodexBin` 解析入口后调用 `inspectEnvironment`，直接返回环境 JSON，不包含任务结果的 `ok`/`output` 包装。它不运行桌面任务或创建截图目录，先读取以下三条来源，再补入在线版本比对结果：
 
@@ -80,6 +82,8 @@ model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(conf
 
 ## 返回与真实证据
 
+用户提供的 Windows 实测（Windows + DSH 0.2.2-rc.2 + Codex CLI 0.167.2，临时补齐 status `output` 后，本轮未重跑）：体检返回 10 个模型、`codexVersion: "0.167.2"`、`planType: "prolite"`；`mode=text` 为 `ok:true`，耗时 54.1 秒；`mode=desktop` 为 `ok:true`，耗时 121.8 秒。记事本真实输入 `hello`，6 张截图，状态栏「5 个字符」可核验。
+
 `computer_use_codex` 返回 `ok`、`exitCode`、`mode`、`codexVersion`、`warnings`、`durationMs`、`output`、`securityMode`/`securityNotice`、`controls`（生效的覆盖值及来源），日志创建成功时附 `logPath`。**`ok:true` 仅表示 CLI 正常退出，不等于任务目标达成**；桌面任务结合截图复核，文本任务核对返回文本。输出最多 8000 个 JavaScript 字符；两种模式的完整日志均保存在私有临时目录，最终消息文件自动删除。日志和截图可能包含敏感信息，需要手动清理。桌面模式截图默认保留 `<cwd>/.codex-cu/`，也可配置；提示词不保证截图生成。文本模式不创建该目录。
 
 任务提供的本机文本模式实测（本轮未重跑）：`ok: true`、`durationMs: 34776`、`codexVersion: "0.167.2"`，`controls: "model=gpt-6.1-sol(config) reasoningEffort=high(config) serviceTier=priority(config)"`。
@@ -87,6 +91,10 @@ model=gpt-6-astra(config) reasoningEffort=high(config) serviceTier=priority(conf
 已核实的历史实测（任务提供，本轮未重跑）：`{"ok":true,"exitCode":0,"durationMs":47537,...}`。截图 `<workspace>/.codex-cu/calculator-7x8-56.png` 证明计算器 `7×8=56`；历史 `.png` 实为 JPEG，本次未改名，后续提示要求 `.jpg`。证据不随 npm 包分发。
 
 ## 已知限制
+
+- `subscriptionActiveUntil` 只是 JWT 声明快照；时间已过期不代表套餐失效或权益终止。
+- Windows 截图路径可能显示为正斜杠形式，这是跨平台显示差异；以返回的绝对路径为准。
+- Windows `.codex-cu/` 中历史 `.png` 文件实为 JPEG 字节；新版本提示词已要求 `.jpg`，不自动重命名历史文件。
 
 任务超时后，采用 TERM → 宽限期 → KILL：先请求优雅终止，等待最多 `terminateGraceMs`，仍未退出时再升级为强制终止，为 Codex 清理 computer-use 会话留出时间，减少会话残留。`terminateGraceMs` 仅为插件配置，不是调用参数；config 优先于环境变量 `DSH_CODEX_TERMINATE_GRACE_MS`，默认 `5000` 毫秒，须为 0–30000 的整数。设为 `0` 时跳过 TERM 和宽限期，直接 KILL。
 
@@ -108,7 +116,7 @@ pkill -f SkyComputerUseClient; killall SkyComputerUseService 2>/dev/null
 ELECTRON_RUN_AS_NODE=1 "/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" test/smoke.mjs
 ```
 
-仅运行假 CLI，包含三类真实 30 秒任务超时：收到 TERM 后自行退出（约 30 秒）、忽略 TERM 后等待 1000 毫秒宽限期再升级 KILL（约 31 秒）、0 宽限期直接 KILL（约 30 秒）；不操作桌面。未验证真实保守模式 GUI、profile 安装、npm 发布。
+仅运行假 CLI：Windows 使用 `.js` 文件，由插件通过 Node 启动；其他平台保留 shell 假 CLI。Windows 可运行 `node test/smoke.mjs`。覆盖注册失败保护、JS 假 CLI 各命令和三类真实 30 秒超时；POSIX 验证 TERM 处理、升级 KILL、直接 KILL，Windows 验证有界超时与 taskkill 终止请求，不依赖 POSIX 信号处理器。不操作桌面；本轮未在原生 Windows 执行 smoke，未验证真实保守模式 GUI、profile 安装、npm 发布。
 
 同意独立 unscoped npm 包与仓库 `dsh-plugin` topic：Host 工具与文本委派 provider 职责不同，不向现有 provider 强塞桌面能力；维护、安全审查由发布者承担。
 

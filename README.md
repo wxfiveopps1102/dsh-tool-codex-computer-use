@@ -18,8 +18,13 @@ Call `computer_use_codex` with `{"task":"Calculate 7×8 and verify by screenshot
 
 ## Supported platforms
 
-- `mode=text`: supported on macOS, Windows and Linux, provided Codex CLI can run on the host.
-- `mode=desktop`: verified on macOS. Windows desktop operation has not been tested; confirm computer-use plugin availability in your Windows environment. Linux desktop support is not guaranteed.
+| Platform | `mode=text` | `mode=desktop` |
+| --- | --- | --- |
+| macOS | Supported | Tested: Calculator `7×8=56` |
+| Windows | Tested | Tested: Notepad entered `hello`; six screenshots, with the status bar showing 5 characters |
+| Linux | Supported | Not guaranteed |
+
+Text mode requires a working local Codex CLI. Windows evidence was supplied by the user on Windows + DSH **0.2.2-rc.2** + Codex CLI **0.167.2**, after temporarily adding the missing status-tool `output` declaration. The fix is now included; these GUI tests were not rerun for this change.
 
 ## Relationship with DSH's built-in subagent_codex
 
@@ -120,6 +125,8 @@ Before running a task, the plugin probes `codex --version` using the resolved en
 
 ## Results and real evidence
 
+User-supplied Windows results (DSH 0.2.2-rc.2 + Codex CLI 0.167.2, after temporarily fixing status `output`; not rerun here): status returned 10 models, `codexVersion: "0.167.2"` and `planType: "prolite"`; `mode=text` returned `ok:true` in 54.1 s; `mode=desktop` returned `ok:true` in 121.8 s. Notepad contained `hello`, with six screenshots and a status bar showing 5 characters. See the [Windows test guide](docs/WINDOWS-TEST.md).
+
 `computer_use_codex` returns `ok`, `exitCode`, `mode`, `codexVersion`, `warnings`, `durationMs`, `output`, `controls` (effective overrides and sources), security fields, and `logPath` when available. **`ok:true` means successful CLI exit, not achievement of the task objective.** Review screenshots for desktop tasks and the returned text for text tasks. Output is limited to 8000 JavaScript characters. Full logs remain in a private system temporary directory in both modes; final-message files are deleted. Logs/screenshots may contain sensitive data and require manual cleanup. In desktop mode, screenshots are requested as `.jpg` in `<cwd>/.codex-cu/` by default; prompts do not guarantee creation. Text mode does not create this directory.
 
 Supplied local text-mode run (not rerun here): `ok: true`, `durationMs: 34776`, `codexVersion: "0.167.2"`, and `controls: "model=gpt-6.1-sol(config) reasoningEffort=high(config) serviceTier=priority(config)"`.
@@ -127,6 +134,10 @@ Supplied local text-mode run (not rerun here): `ok: true`, `durationMs: 34776`, 
 Previously verified real run, supplied as evidence and not repeated here: `{"ok":true,"exitCode":0,"durationMs":47537,...}`. `<workspace>/.codex-cu/calculator-7x8-56.png` proves Calculator displayed `7×8=56`. The historical `.png` contains JPEG bytes; this change does not rename it. Future prompts request `.jpg`. Evidence is outside the npm package.
 
 ## Known limitations
+
+- `subscriptionActiveUntil` is only a snapshot of a JWT claim. A past timestamp does not mean the subscription has expired or lost its benefits.
+- Screenshot paths may use forward slashes on Windows; this is a cross-platform display difference. Use the returned absolute path.
+- Historical Windows `.codex-cu/*.png` files contain JPEG bytes. The new prompt already requests `.jpg`; existing files are not renamed.
 
 See the [detailed safety and limitations guide (Chinese)](docs/DETAIL.md) for more information.
 
@@ -150,6 +161,6 @@ From this package directory:
 ELECTRON_RUN_AS_NODE=1 "/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" test/smoke.mjs
 ```
 
-Tests use fake CLIs only, including three real 30-second task timeout cases: exit after TERM (about 30 seconds), ignore TERM and escalate to KILL after a 1000 ms grace period (about 31 seconds), and send KILL immediately with a zero grace period (about 30 seconds); no desktop operation. Real conservative-mode GUI behavior, profile installation and publication remain unverified.
+Tests use fake CLIs only: Windows uses `.js` files through the plugin's Node launcher; other platforms retain shell fixtures. Run `node test/smoke.mjs` with Node on Windows. Registration failures, JS fixture commands and three real 30-second timeouts are covered. POSIX tests assert TERM handling, KILL escalation and direct KILL; Windows asserts bounded timeouts and taskkill termination requests without assuming POSIX signal handlers. No desktop operation is performed. Native Windows smoke, real conservative-mode GUI behavior, profile installation and publication were not verified in this change.
 
 The author and MIT copyright holder are `wx5`. Repository metadata uses `https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use`, with `wxfiveopps1102` as the GitHub owner; the repository has not yet been created. Confirm npm name availability and ownership; tag the actual repository `dsh-plugin` for directory submission. The independent unscoped package keeps Host tool semantics separate from subagent providers; maintainers own security review and ongoing maintenance. MIT licensed.

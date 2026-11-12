@@ -492,16 +492,39 @@ export function apply(ctx, config = {}) {
     name: 'computer_use_codex_status',
     description: 'Inspect Codex models, CLI and desktop app versions, authentication mode and subscription metadata. Results are cached for five minutes.',
     parameters: { type: 'object', additionalProperties: false, properties: {}, required: [] },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }],
+    },
     execute: async () => inspectEnvironment(await resolveCodexBin(config), config),
     presentCall: () => ({ card: 'generic', title: 'Codex environment' }),
   };
+  let dispose;
+  let registrationStarted = false;
   const register = () => {
-    const disposeStatus = ctx.tools.register(statusTool);
+    if (dispose) return dispose;
+    registrationStarted = true;
     const disposeTool = ctx.tools.register(tool);
-    return () => {
-      if (typeof disposeTool === 'function') disposeTool();
-      if (typeof disposeStatus === 'function') disposeStatus();
+    let disposeStatus;
+    try { disposeStatus = ctx.tools.register(statusTool); }
+    catch (error) { console.error('[codex-computer-use] Status tool registration failed:', error); }
+    let disposed = false;
+    dispose = () => {
+      if (disposed) return;
+      disposed = true;
+      for (const cleanup of [disposeTool, disposeStatus]) {
+        try { if (typeof cleanup === 'function') cleanup(); }
+        catch (error) { console.error('[codex-computer-use] Tool cleanup failed:', error); }
+      }
     };
+    return dispose;
   };
-  return ctx.effect ? ctx.effect(register) : register();
+  try { if (typeof ctx.effect === 'function') return ctx.effect(register); }
+  catch (error) {
+    // Keep primary registration failures visible; only the optional lifecycle
+    // wrapper can fall back. Reuse an existing registration if it already ran.
+    if (registrationStarted && !dispose) throw error;
+    console.error('[codex-computer-use] Effect setup failed; retaining tools:', error);
+  }
+  return register();
 }

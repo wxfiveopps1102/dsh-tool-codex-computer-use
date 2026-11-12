@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 const root = new URL('../', import.meta.url);
 const check = (v, message) => { if (!v) throw new Error(message); };
+const isWindows = process.platform === 'win32';
 let fixture;
 const logs = [];
 const savedEnv = { ...process.env };
@@ -30,11 +31,57 @@ try {
   const platforms = [['darwin', 'macOS'], ['win32', 'Windows'], ['linux', 'Linux']];
   for (const [platform, label] of platforms) check(platformLabel(platform) === label, 'platform label: ' + platform);
   let captured, statusTool;
+  const registrations = [];
   const ctx = { tools: { register(def) {
+    check(def.output?.schema?.type === 'object' && typeof def.output.render === 'function', 'Host requires output.schema and output.render: ' + def.name);
+    registrations.push(def.name);
     if (def.name === 'computer_use_codex_status') statusTool = def;
     else captured = def;
   } } };
   apply(ctx, {});
+  check(registrations.join(',') === 'computer_use_codex,computer_use_codex_status', 'main tool registers first');
+  check(statusTool.output.schema.additionalProperties === true, 'status output accepts environment fields');
+  const statusValue = { models: [], codexVersion: '0.167.2' };
+  check(JSON.stringify(statusTool.output.render({}, statusValue)) ===
+    JSON.stringify([{ type: 'text', text: JSON.stringify(statusValue, null, 2) }]), 'status JSON renderer');
+  const registrationErrors = [];
+  const originalError = console.error;
+  try {
+    console.error = (...args) => registrationErrors.push(args);
+    let mainRegistered = false, mainDisposed = false;
+    const cleanup = apply({ tools: { register(def) {
+      if (def.name === 'computer_use_codex_status') throw new Error('status registration rejected');
+      mainRegistered = true;
+      return () => { mainDisposed = true; };
+    } } });
+    check(mainRegistered && !mainDisposed && registrationErrors.length === 1, 'status failure preserves main tool and logs once');
+    cleanup();
+    check(mainDisposed, 'main tool remains disposable after status failure');
+    for (const phase of ['before', 'after']) {
+      const registered = [], disposed = [];
+      const cleanup = apply({
+        effect(register) {
+          if (phase === 'after') register();
+          throw new Error('effect failed ' + phase);
+        },
+        tools: { register(def) {
+          registered.push(def.name);
+          return () => { disposed.push(def.name); if (def.name === 'computer_use_codex') throw new Error('cleanup failed'); };
+        } },
+      });
+      check(registered.join(',') === 'computer_use_codex,computer_use_codex_status', 'effect fallback registers once: ' + phase);
+      cleanup();
+      cleanup();
+      check(disposed.join(',') === registered.join(','), 'cleanup failure does not skip status or repeat cleanup: ' + phase);
+    }
+    let attempts = 0;
+    const mainError = new Error('main registration rejected');
+    try {
+      apply({ effect: register => register(), tools: { register() { attempts++; throw mainError; } } });
+      throw new Error('expected main registration error');
+    } catch (error) { check(error === mainError && attempts === 1, 'main registration failure stays visible without retry'); }
+  } finally { console.error = originalError; }
+  console.log('OK: required tool outputs, main-first registration, status/effect/cleanup failure isolation');
   check(captured.name === 'computer_use_codex', 'name');
   check(captured.description.includes('local desktop task') && !captured.description.includes('macOS'), 'platform-neutral tool description');
   check(captured.parameters.properties.task.type === 'string' && captured.parameters.required.includes('task'), 'required task');
@@ -49,6 +96,8 @@ try {
   check(captured.presentCall({ task: 'ok' }).title === 'Computer use via Codex', 'title');
   fixture = await realpath(await mkdtemp(join(tmpdir(), 'dsh-codex-smoke-')));
   process.env.TMPDIR = fixture;
+  process.env.TEMP = fixture;
+  process.env.TMP = fixture;
   process.env.CODEX_HOME = fixture;
   const writeFixtureFile = async (target, contents) => {
     check(resolve(target).startsWith(fixture + sep), 'write outside fixture');
@@ -58,6 +107,8 @@ try {
     await rm(target, { force: true });
     await writeFile(target, contents, { flag: 'wx' });
   };
+  // Node 20 also needs explicit ESM mode for the disposable .js entry points.
+  await writeFixtureFile(join(fixture, 'package.json'), '{"type":"module"}\n');
   const runtimeDir = join(fixture, 'runtime.app', 'Contents', 'MacOS');
   await mkdir(runtimeDir, { recursive: true });
   const nodeExec = join(runtimeDir, basename(process.execPath));
@@ -73,13 +124,40 @@ try {
     check(!signed.error && signed.status === 0, 'sign copied runtime: ' + (signed.error?.message ?? signed.stderr));
   }
   process.env.DSH_NODE_EXECUTABLE = nodeExec;
-  const fake = join(fixture, 'fake-codex');
+  const cliPath = label => join(fixture, label + (isWindows ? '.js' : ''));
+  const fake = cliPath('fake-codex');
   const versionHandler = (version = 'codex-cli 0.153.4', exitCode = 0) =>
     `if [ "$1" = '--version' ]; then\n printf x >> "$0.versions"\n printf '%s\\n' '${version}'\n exit ${exitCode}\nfi\n`;
   const parser = `printf '%s\\n' "$@"\ncat\nout=''\nwhile [ "$#" -gt 0 ]; do\n if [ "$1" = '-o' ]; then shift; out="$1"; fi\n shift\ndone\n`;
-  const script = async body => {
-    await writeFixtureFile(fake, '#!/bin/sh\n' + versionHandler() + parser + body);
-    await chmod(fake, 0o700);
+  const writeCli = async (entry, {
+    body = 'printf "FAKE OK" > "$out"\n', jsBody = "writeFileSync(out, 'FAKE OK');",
+    version = 'codex-cli 0.153.4', versionExitCode = 0, handlers = '', jsHandlers = '',
+  } = {}, useJs = isWindows) => {
+    if (useJs) {
+      // .js entries go through the plugin's Node launcher; no shell or .cmd shim.
+      await writeFixtureFile(entry, `
+import { appendFileSync, writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+if (args[0] === '--version') {
+  appendFileSync(process.argv[1] + '.versions', 'x');
+  console.log(${JSON.stringify(version)});
+  process.exit(${versionExitCode});
+}
+${jsHandlers}
+if (args[0] !== 'exec') process.exit(7);
+process.stdout.write(args.join('\\n') + '\\n');
+const outputIndex = args.indexOf('-o');
+if (outputIndex < 0 || !args[outputIndex + 1]) process.exit(7);
+const out = args[outputIndex + 1];
+${jsBody}
+`);
+    } else {
+      await writeFixtureFile(entry, '#!/bin/sh\n' + versionHandler(version, versionExitCode) + handlers + parser + body);
+      await chmod(entry, 0o700);
+    }
+  };
+  const script = async (body, jsBody) => {
+    await writeCli(fake, { body, jsBody });
     apply(ctx, { codexBin: fake });
   };
   const execute = async (args = {}, tool = captured) => {
@@ -98,7 +176,7 @@ try {
   try { process.chdir(fixture); success = await captured.execute({ task: 'say ok' }, {}); }
   finally { process.chdir(oldCwd); }
   logs.push(dirname(success.logPath));
-  check(success.ok && success.exitCode === 0 && success.output.includes('FAKE OK') && success.durationMs >= 0, 'shell success');
+  check(success.ok && success.exitCode === 0 && success.output.includes('FAKE OK') && success.durationMs >= 0, 'fake CLI success');
   const hasUpgradeWarning = result => result.warnings.some(warning => warning.includes('升级') && warning.includes('npm 最新'));
   check(success.codexVersion === '0.153.4' && !hasUpgradeWarning(success) && fetchCalls === 0, 'offline CLI probe without fetch or upgrade warning');
   const log = await readFile(success.logPath, 'utf8');
@@ -144,7 +222,7 @@ try {
   console.log('OK: default/explicit desktop, text prompt, no text screenshot directories, invalid modes');
   // Capture each platform's prompt with the fake CLI on this host. Restore the
   // real platform before execution; this does not validate Windows desktop use.
-  const platformBin = join(fixture, 'platform-codex');
+  const platformBin = cliPath('platform-codex');
   await copyFile(fake, platformBin);
   await chmod(platformBin, 0o700);
   const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
@@ -210,7 +288,7 @@ try {
   apply(ctx, { codexBin: fake, model: 'BAD MODEL' });
   const invalidConfig = await execute();
   check(!invalidConfig.ok && invalidConfig.output.includes('model') && invalidConfig.output.includes('config'), 'invalid config returns failure');
-  console.log('OK: registration, shell argv, prompt, log, validation');
+  console.log('OK: registration, CLI argv, prompt, log, validation');
   check(await readFile(fake + '.versions', 'utf8') === 'x', 'version cached across calls and registrations');
   success.warnings.push('caller mutation');
   apply(ctx, { codexBin: fake });
@@ -223,9 +301,9 @@ try {
     'desktop.app.version': { details: { version: '1.2.3' } },
     'auth.credentials': { details: { 'stored auth mode': 'chatgpt' } },
   } };
-  const statusEntry = async (label, failOnline = false, failBundled = false) => {
-    const entry = join(fixture, `status-${label}`);
-    await writeFixtureFile(entry, '#!/bin/sh\n' + versionHandler() + `
+  const statusEntry = async (label, failOnline = false, failBundled = false, useJs = isWindows) => {
+    const entry = join(fixture, `status-${label}${useJs ? '.js' : ''}`);
+    await writeCli(entry, { handlers: `
 if [ "$1" = 'debug' ]; then
  printf '%s\\n' "$*" >> "$0.calls"
  if [ "$3" = '--bundled' ]; then
@@ -240,8 +318,18 @@ if [ "$1" = 'doctor' ]; then
  printf '%s\\n' '${JSON.stringify(doctorData)}'
  exit 0
 fi
-` + parser + 'printf "FAKE OK" > "$out"\n');
-    await chmod(entry, 0o700);
+`, jsHandlers: `
+if (args[0] === 'debug' && args[1] === 'models') {
+  appendFileSync(process.argv[1] + '.calls', args.join(' ') + '\\n');
+  if (args.includes('--bundled') ? ${failBundled} : ${failOnline}) process.exit(args.includes('--bundled') ? 8 : 7);
+  console.log(${JSON.stringify(JSON.stringify(modelData))});
+  process.exit(0);
+}
+if (args[0] === 'doctor' && args[1] === '--json') {
+  console.log(${JSON.stringify(JSON.stringify(doctorData))});
+  process.exit(0);
+}
+` }, useJs);
     return entry;
   };
   const authPayload = Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_plan_type: 'test' } })).toString('base64url');
@@ -297,9 +385,8 @@ fi
     ['invalid-suffix', 'codex-cli 0.167.0-', 0, 'unknown', false],
     ['invalid-prerelease', 'codex-cli 0.167.0-01', 0, 'unknown', false],
   ]) {
-    const entry = join(fixture, `fake-${label}`);
-    await writeFixtureFile(entry, '#!/bin/sh\n' + versionHandler(versionOutput, exitCode) + parser + 'printf "FAKE OK" > "$out"\n');
-    await chmod(entry, 0o700);
+    const entry = cliPath(`fake-${label}`);
+    await writeCli(entry, { version: versionOutput, versionExitCode: exitCode });
     apply(ctx, { codexBin: entry });
     const results = await Promise.all([execute(), execute()]);
     for (const result of results) {
@@ -309,7 +396,7 @@ fi
       else if (!upgrade) check(result.warnings.length === 0, 'no version warning: ' + label);
     }
     // An equivalent path must reuse the result, including a failed probe.
-    apply(ctx, { codexBin: join(fixture, '.') + '/./fake-' + label });
+    apply(ctx, { codexBin: join(fixture, '.') + '/./' + basename(entry) });
     check((await execute()).codexVersion === expected, 'cached version: ' + label);
     check(await readFile(entry + '.versions', 'utf8') === 'x', 'one probe per resolved path: ' + label);
   }
@@ -337,19 +424,39 @@ fi
   Date.now = savedNow;
   process.env.DSH_CODEX_OFFLINE = '1';
   console.log('OK: six-hour success/failure cache, expiry, recovery, malformed version');
-  await script('printf "FINAL FAILURE" > "$out"\nexit 7\n');
+  // Exercise the Windows JS fixture generator on POSIX too, without pretending
+  // this validates native Windows process launching or taskkill behavior.
+  const portableBin = await statusEntry('portable', false, false, true);
+  apply(ctx, { codexBin: portableBin });
+  const portableStatus = await statusTool.execute();
+  const portableResult = await execute({ mode: 'text' });
+  check(portableStatus.models.length === 2 && portableStatus.codexVersion === doctorData.codexVersion &&
+    portableResult.ok && portableResult.output === 'FAKE OK' && portableResult.codexVersion === '0.153.4',
+    'JS fixture supports --version, debug models, doctor --json and exec');
+  await writeCli(portableBin, { jsBody: "await new Promise(resolve => setTimeout(resolve, 50)); writeFileSync(out, 'JS DELAYED FAILURE'); process.exit(7);" }, true);
+  const portableFailure = await execute({ mode: 'text' });
+  check(!portableFailure.ok && portableFailure.exitCode === 7 && portableFailure.output.includes('JS DELAYED FAILURE'), 'JS fixture delay and exit code');
+  console.log('OK: portable JS fake CLI commands, output file, delay and nonzero exit');
+  await script('printf "FINAL FAILURE" > "$out"\nexit 7\n', "writeFileSync(out, 'FINAL FAILURE'); process.exit(7);");
   const failed = await execute();
   check(!failed.ok && failed.exitCode === 7 && failed.output.includes('FINAL FAILURE'), 'nonzero');
-  await script('printf "TAIL FALLBACK" >&2\n');
+  await script('printf "TAIL FALLBACK" >&2\n', "process.stderr.write('TAIL FALLBACK\\n');");
   check((await execute()).output.includes('TAIL FALLBACK'), 'fallback');
-  await script('i=0\nwhile [ "$i" -lt 10000 ]; do printf x; i=$((i + 1)); done > "$out"\n');
+  await script('i=0\nwhile [ "$i" -lt 10000 ]; do printf x; i=$((i + 1)); done > "$out"\n', "writeFileSync(out, 'x'.repeat(10000));");
   const long = await execute();
   const match = long.output.match(/…\[truncated, (\d+) chars omitted\]$/);
   check(long.ok && match && long.output.indexOf('…') + Number(match[1]) === 10000, 'truncation');
   apply(ctx, { codexBin: join(fixture, 'missing') });
   check(!(await execute()).ok, 'missing entry');
-  await chmod(fake, 0o600);
-  apply(ctx, { codexBin: fake });
+  if (isWindows) {
+    // Windows ignores POSIX executable bits; use an invalid native entry instead.
+    const invalidExecutable = join(fixture, 'invalid-codex.exe');
+    await writeFixtureFile(invalidExecutable, 'not a Windows executable');
+    apply(ctx, { codexBin: invalidExecutable });
+  } else {
+    await chmod(fake, 0o600);
+    apply(ctx, { codexBin: fake });
+  }
   check(!(await execute()).ok, 'spawn error');
   const js = join(fixture, 'fake.js');
   await writeFixtureFile(js, `
@@ -385,8 +492,14 @@ await writeFile(target, 'FAKE JS OK', { flag: 'wx' });
   // Only fake executables are used, including PATH and profile resolution.
   await script('printf "FAKE OK" > "$out"\n');
   const pathBin = join(fixture, 'codex');
-  await copyFile(fake, pathBin);
-  await chmod(pathBin, 0o700);
+  if (isWindows) {
+    // The resolver currently looks for literal `codex`, not npm's codex.cmd.
+    // A selected, non-executable file must fail rather than fall back to profile.
+    await writeFixtureFile(pathBin, 'not a Windows executable');
+  } else {
+    await copyFile(fake, pathBin);
+    await chmod(pathBin, 0o700);
+  }
   const profileDir = join(fixture, 'profile');
   const profileEntry = join(profileDir, 'node_modules/@openai/codex/bin/codex.js');
   await mkdir(dirname(profileEntry), { recursive: true });
@@ -400,7 +513,9 @@ await writeFile(target, 'FAKE JS OK', { flag: 'wx' });
   apply(ctx, {});
   check((await execute()).output === 'FAKE JS OK', 'env beats PATH');
   delete process.env.DSH_CODEX_BIN;
-  check((await execute()).output === 'FAKE OK', 'PATH beats profile');
+  const pathResult = await execute();
+  check(isWindows ? !pathResult.ok && pathResult.output.includes('Cannot start Codex')
+    : pathResult.output === 'FAKE OK', 'PATH beats profile without fallback');
   process.env.PATH = '';
   const profileFallback = await execute();
   check(profileFallback.ok && profileFallback.output === 'FAKE JS OK', 'profile fallback from DSH_PROFILE_DIR');
@@ -505,21 +620,34 @@ setInterval(() => {}, 1000);
   ]);
   for (const outcome of timeoutCases) if (outcome.status === 'rejected') throw outcome.reason;
   const [gracefulTimeout, escalatedTimeout, immediateTimeout] = timeoutCases.map(outcome => outcome.value);
-  check(gracefulTimeout.result.durationMs >= 29000 && gracefulTimeout.result.durationMs < 35000,
-    'graceful timeout returns near 30 seconds: ' + gracefulTimeout.result.durationMs);
-  check(gracefulTimeout.result.output.includes('SIGTERM requested') && !gracefulTimeout.result.output.includes('SIGKILL') &&
-    gracefulTimeout.log.includes('FAKE SIGTERM RECEIVED') && gracefulTimeout.log.includes('FAKE EXIT 0'),
-    'default grace allows SIGTERM handler to exit zero but preserves timeout failure');
-  check(escalatedTimeout.result.durationMs >= 30900 && escalatedTimeout.result.durationMs < 37000,
-    'escalated timeout returns near 31 seconds: ' + escalatedTimeout.result.durationMs);
-  check(escalatedTimeout.result.output.includes('SIGTERM') && escalatedTimeout.result.output.includes('escalated to SIGKILL') &&
-    escalatedTimeout.log.includes('FAKE SIGTERM RECEIVED') && !escalatedTimeout.log.includes('FAKE EXIT 0'),
-    'ignored SIGTERM escalates to SIGKILL after configured grace');
+  if (isWindows) {
+    // taskkill (or child.kill fallback) does not deliver POSIX SIGTERM handlers.
+    // Either exit during grace or forced termination is valid on Windows.
+    for (const timedOut of [gracefulTimeout, escalatedTimeout]) {
+      check(timedOut.result.durationMs >= 29000 && timedOut.result.durationMs < 40000,
+        'Windows timeout remains bounded: ' + timedOut.result.durationMs);
+      check(timedOut.result.output.includes('SIGTERM requested via taskkill /T'), 'Windows tree termination requested');
+    }
+  } else {
+    check(gracefulTimeout.result.durationMs >= 29000 && gracefulTimeout.result.durationMs < 35000,
+      'graceful timeout returns near 30 seconds: ' + gracefulTimeout.result.durationMs);
+    check(gracefulTimeout.result.output.includes('SIGTERM requested') && !gracefulTimeout.result.output.includes('SIGKILL') &&
+      gracefulTimeout.log.includes('FAKE SIGTERM RECEIVED') && gracefulTimeout.log.includes('FAKE EXIT 0'),
+      'default grace allows SIGTERM handler to exit zero but preserves timeout failure');
+    check(escalatedTimeout.result.durationMs >= 30900 && escalatedTimeout.result.durationMs < 37000,
+      'escalated timeout returns near 31 seconds: ' + escalatedTimeout.result.durationMs);
+    check(escalatedTimeout.result.output.includes('SIGTERM') && escalatedTimeout.result.output.includes('escalated to SIGKILL') &&
+      escalatedTimeout.log.includes('FAKE SIGTERM RECEIVED') && !escalatedTimeout.log.includes('FAKE EXIT 0'),
+      'ignored SIGTERM escalates to SIGKILL after configured grace');
+  }
   check(immediateTimeout.result.durationMs >= 29000 && immediateTimeout.result.durationMs < 35000,
     'zero-grace timeout returns near 30 seconds: ' + immediateTimeout.result.durationMs);
   check(immediateTimeout.result.output.includes('SIGKILL requested directly') && !immediateTimeout.result.output.includes('SIGTERM') &&
     !immediateTimeout.log.includes('FAKE SIGTERM RECEIVED'), 'zero grace skips SIGTERM and requests SIGKILL directly');
-  console.log('OK: concurrent real timeouts, SIGTERM exit zero (~30s), SIGKILL escalation (~31s), direct SIGKILL (~30s)');
+  if (isWindows) check(immediateTimeout.result.output.includes('via taskkill /T /F'), 'Windows direct forced tree termination');
+  console.log(isWindows
+    ? 'OK: concurrent real Windows timeouts, taskkill grace/forced termination, direct forced termination'
+    : 'OK: concurrent real timeouts, SIGTERM exit zero (~30s), SIGKILL escalation (~31s), direct SIGKILL (~30s)');
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
   check(!manifest.dependencies && manifest.dsh.bundle.patch === './cordis.patch.yml', 'manifest');
   check(manifest.name === 'dsh-tool-codex-computer-use' && !manifest.private && manifest.license === 'MIT' && manifest.engines.node === '>=20' && manifest.keywords.includes('dsh-plugin'), 'public metadata');
