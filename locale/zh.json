@@ -1,0 +1,1 @@
+{"meta":{"title":"Codex 桌面操作","description":"通过 computer_use_codex 将一次性 macOS 桌面任务交给 Codex，返回简短结果及完整日志路径。需要已登录的 Codex、已启用的 computer-use/browser 插件和 macOS 权限；执行中不追问。","detail":"docs/DETAIL.md"}}

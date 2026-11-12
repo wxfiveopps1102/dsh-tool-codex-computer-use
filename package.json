@@ -1,0 +1,52 @@
+{
+  "name": "dsh-tool-codex-computer-use",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Delegate one-shot macOS desktop tasks to the local Codex CLI.",
+  "author": "wx5",
+  "homepage": "https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use/issues"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "docs/DETAIL.md",
+    "docs/ARCHITECTURE.md",
+    "docs/assets/*.jpg",
+    "icon.svg",
+    "README.md",
+    "README.zh.md",
+    "LICENSE",
+    "test/smoke.mjs"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "capabilities": ["tools:register", "subprocess", "fs:write", "network:egress"]
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "codex",
+    "computer-use",
+    "macos"
+  ],
+  "scripts": {
+    "test": "node test/smoke.mjs"
+  }
+}
