@@ -90,15 +90,15 @@ git+https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use.git
 
 Repository: [wxfiveopps1102/dsh-tool-codex-computer-use](https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use). A community catalog listing is not required for this route; catalog inclusion remains planned.
 
-### By npm package name — planned
+### By npm package name (recommended)
 
-**The npm package has not been published.** The planned package name is `dsh-tool-codex-computer-use`; the following command is for use **after publication**:
+Published on npm as `dsh-tool-codex-computer-use@0.1.0`.
 
 ```sh
 dsh plugin --profile desktop add dsh-tool-codex-computer-use
 ```
 
-Use a Git installation route for now. Publication and package-name availability checks remain pending; see the [release record](RELEASE.md) and [publishing guide (Chinese)](docs/PUBLISHING.md).
+Confirm the version with `npm view dsh-tool-codex-computer-use version`. See the [release record](RELEASE.md).
 
 ## Usage
 

@@ -90,15 +90,15 @@ git+https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use.git
 
 仓库：[wxfiveopps1102/dsh-tool-codex-computer-use](https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use)。此方式不要求社区市场收录；市场收录仍在计划中。
 
-### 按 npm 包名安装 — planned（计划中）
+### 按 npm 包名安装（推荐）
 
-**npm 包尚未发布。** 计划包名为 `dsh-tool-codex-computer-use`，以下命令仅供**发布后**使用：
+已发布到 npm：`dsh-tool-codex-computer-use@0.1.0`。
 
 ```sh
 dsh plugin --profile desktop add dsh-tool-codex-computer-use
 ```
 
-当前请使用 Git 安装方式。npm 发布、包名可用性检查仍待完成，见[发布记录](RELEASE.md)与[发布指南](docs/PUBLISHING.md)。
+也可先用 `npm view dsh-tool-codex-computer-use version` 确认版本。发布记录见[发布记录](RELEASE.md)。
 
 ## 使用
 
