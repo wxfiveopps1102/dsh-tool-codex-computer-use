@@ -1,5 +1,13 @@
 # 发布收尾记录：dsh-tool-codex-computer-use 0.1.0
 
+## 发布记录
+
+- 2026-11-13：`dsh-tool-codex-computer-use@0.1.0` 发布至 npm（`latest`）。
+- 从 registry 安装验证：`pnpm add dsh-tool-codex-computer-use@0.1.0` 成功（约 3.8 秒），模块加载后注册 `computer_use_codex` 与 `computer_use_codex_status`。
+- DSH 安装验证：desktop profile 的依赖已由 `link:` 切换为 registry 版本 `0.1.0`，插件页关闭再启用后工具正常；`computer_use_codex_status` 与 `mode=text` 真实调用均通过。
+- npm 自动生成的占位版本 `0.0.0-stage` 已标记为 deprecated。
+- GitHub 仓库公开：`https://github.com/wxfiveopps1102/dsh-tool-codex-computer-use`，topics 含 `dsh-plugin`。
+
 本包是通过本机 Codex CLI 执行一次性 macOS / Windows 桌面或文本任务的 DSH Host 工具，提供 `computer_use_codex` 和环境体检工具 `computer_use_codex_status`。
 
 ## 定位与差异
